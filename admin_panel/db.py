@@ -616,6 +616,13 @@ class Database:
         )
         self.conn.commit()
 
+    def update_admin_password_hash(self, admin_id: int, password_hash: str) -> None:
+        self.conn.execute(
+            "UPDATE admins SET password_hash = ? WHERE id = ?",
+            (password_hash, admin_id),
+        )
+        self.conn.commit()
+
     def get_stats(self) -> dict[str, int]:
         cursor = self.conn.cursor()
         return {
