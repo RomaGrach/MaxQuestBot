@@ -34,6 +34,28 @@ def _datetime_local_value(raw_value) -> str:
     return str(raw_value).replace(" ", "T")[:16]
 
 
+def _cell(label: str, value: str, class_name: str = "") -> str:
+    cls = f' class="{class_name}"' if class_name else ""
+    return f'<td data-label="{_escape(label)}"{cls}>{value}</td>'
+
+
+def _full_row(content: str, colspan: int, class_name: str = "") -> str:
+    extra = f" {class_name}" if class_name else ""
+    return f'<tr class="full-row{extra}"><td colspan="{colspan}">{content}</td></tr>'
+
+
+def _table(headers: list[str], rows: str, empty_message: str, colspan: int | None = None) -> str:
+    if not rows:
+        rows = _full_row(f'<div class="empty">{_escape(empty_message)}</div>', colspan or len(headers))
+    head = "".join(f"<th>{_escape(header)}</th>" for header in headers)
+    return (
+        '<table class="responsive-table">'
+        f"<thead><tr>{head}</tr></thead>"
+        f"<tbody>{rows}</tbody>"
+        "</table>"
+    )
+
+
 def layout(title, body, user=None, active=""):
     nav = ""
     if user:
@@ -76,6 +98,7 @@ table{{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;ove
 th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #eee;font-size:14px;vertical-align:top}}
 th{{background:#636e72;color:#fff;font-weight:600}}
 tr:hover{{background:#f8f9fa}}
+.responsive-table .full-row td{{padding:0;border-bottom:none}}
 .badge{{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}}
 .badge-green{{background:#00b894;color:#fff}}
 .badge-yellow{{background:#fdcb6e;color:#2d3436}}
@@ -126,8 +149,16 @@ form{{max-width:none}}
 .inline-form{{flex-direction:column;align-items:stretch}}
 .inline-form input,.inline-form select,.inline-form button{{width:100%;min-width:0}}
 .login-box{{max-width:none;margin:24px auto;padding:24px}}
-table{{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}}
-th,td{{padding:10px 12px}}
+table.responsive-table{{display:block;background:transparent;box-shadow:none;border-radius:0;overflow:visible;white-space:normal}}
+table.responsive-table thead{{display:none}}
+table.responsive-table tbody{{display:block}}
+table.responsive-table tr{{display:block;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:12px;padding:8px 0}}
+table.responsive-table tr.full-row{{padding:0;background:transparent;box-shadow:none}}
+table.responsive-table td{{display:block;padding:10px 12px;border-bottom:1px solid #eee;white-space:normal;word-break:break-word}}
+table.responsive-table td::before{{content:attr(data-label);display:block;margin-bottom:4px;font-size:12px;font-weight:600;color:#636e72}}
+table.responsive-table tr td:last-child{{border-bottom:none}}
+table.responsive-table tr.full-row td{{padding:0;border-bottom:none}}
+table.responsive-table tr.full-row td::before{{display:none;content:none}}
 }}
 </style>
 </head>
@@ -159,21 +190,21 @@ def _users_table(users):
     for user in users:
         uid = user["id"]
         consent = "✅" if user["consent_given"] else "❌"
+        user_link = f"<a href='/admin/users/{uid}'>{_escape(user['max_user_id'])}</a>"
         rows += (
             f"<tr>"
-            f"<td>{uid}</td>"
-            f"<td><a href='/admin/users/{uid}'>{_escape(user['max_user_id'])}</a></td>"
-            f"<td>{_escape(user['phone'] or '—')}</td>"
-            f"<td>{int(user['completed_quests_count'] or 0)}</td>"
-            f"<td>{consent}</td>"
-            f"<td>{_escape(user['registered_at'] or '')}</td>"
+            f"{_cell('ID', str(uid))}"
+            f"{_cell('MAX ID', user_link)}"
+            f"{_cell('Телефон', _escape(user['phone'] or '—'))}"
+            f"{_cell('Квестов пройдено', str(int(user['completed_quests_count'] or 0)))}"
+            f"{_cell('Согласие', consent)}"
+            f"{_cell('Дата регистрации', _escape(user['registered_at'] or ''))}"
             f"</tr>"
         )
-    if not rows:
-        rows = '<tr><td colspan="6" class="empty">Нет пользователей</td></tr>'
-    return (
-        "<table><tr><th>ID</th><th>MAX ID</th><th>Телефон</th><th>Квестов пройдено</th><th>Согласие</th><th>Дата регистрации</th></tr>"
-        f"{rows}</table>"
+    return _table(
+        ["ID", "MAX ID", "Телефон", "Квестов пройдено", "Согласие", "Дата регистрации"],
+        rows,
+        "Нет пользователей",
     )
 
 
@@ -230,11 +261,7 @@ def user_detail(user, attempts, answer_logs_map, current_admin):
     if not attempts:
         body += '<p class="empty">Нет прохождений</p>'
     else:
-        body += (
-            "<table><tr>"
-            "<th>Квест</th><th>Статус</th><th>Начат</th><th>Завершён</th><th>Подарок</th><th>Действия</th>"
-            "</tr>"
-        )
+        attempt_rows = ""
         for attempt in attempts:
             status_badge = (
                 _badge("В процессе", "blue")
@@ -265,46 +292,54 @@ def user_detail(user, attempts, answer_logs_map, current_admin):
                 actions = '<span class="muted">Доп. действий нет</span>'
 
             comment_value = attempt["comment"] or ""
-            body += (
+            attempt_rows += (
                 "<tr>"
-                f"<td>{_escape(attempt['quest_name'])}</td>"
-                f"<td>{status_badge}</td>"
-                f"<td>{_escape(attempt['started_at'] or '')}</td>"
-                f"<td>{_escape(attempt['completed_at'] or '—')}</td>"
-                f"<td>{gift_info}</td>"
-                f"<td>{actions}</td>"
+                f"{_cell('Квест', _escape(attempt['quest_name']))}"
+                f"{_cell('Статус', status_badge)}"
+                f"{_cell('Начат', _escape(attempt['started_at'] or ''))}"
+                f"{_cell('Завершён', _escape(attempt['completed_at'] or '—'))}"
+                f"{_cell('Подарок', gift_info)}"
+                f"{_cell('Действия', actions)}"
                 "</tr>"
             )
 
             logs = answer_logs_map.get(attempt["id"], [])
             if logs:
-                body += (
-                    '<tr><td colspan="6" style="padding:0">'
-                    '<details><summary style="padding:8px 14px">📋 Логи ответов</summary>'
-                    '<table style="margin:0;border:none"><tr><th>Статус</th><th>Вопрос</th><th>Ответ</th><th>Эталон</th><th>Время</th></tr>'
-                )
+                log_rows = ""
                 for log in logs:
                     mark = "✅" if log["is_correct"] else "❌"
-                    body += (
+                    log_rows += (
                         "<tr>"
-                        f"<td>{mark}</td>"
-                        f"<td>{_escape(log['task_text'])}</td>"
-                        f"<td>{_escape(log['answer_text'])}</td>"
-                        f"<td>{_escape(log['correct_answer'])}</td>"
-                        f"<td>{_escape(log['answered_at'] or '')}</td>"
+                        f"{_cell('Статус', mark)}"
+                        f"{_cell('Вопрос', _escape(log['task_text']))}"
+                        f"{_cell('Ответ', _escape(log['answer_text']))}"
+                        f"{_cell('Эталон', _escape(log['correct_answer']))}"
+                        f"{_cell('Время', _escape(log['answered_at'] or ''))}"
                         "</tr>"
                     )
-                body += "</table></details></td></tr>"
+                logs_table = _table(
+                    ["Статус", "Вопрос", "Ответ", "Эталон", "Время"],
+                    log_rows,
+                    "Нет логов ответов",
+                )
+                attempt_rows += _full_row(
+                    '<details><summary style="padding:8px 14px">📋 Логи ответов</summary>'
+                    f"{logs_table}</details>",
+                    6,
+                )
 
-            body += (
-                "<tr><td colspan='6'>"
+            attempt_rows += _full_row(
                 f"<form method='POST' action='/admin/attempts/{attempt['id']}/comment' class='inline-form'>"
                 f"<input type='text' name='comment' value='{_escape(comment_value)}' placeholder='Комментарий по прохождению' style='flex:1'>"
                 "<button class='btn btn-secondary btn-sm'>💾 Сохранить комментарий</button>"
-                "</form>"
-                "</td></tr>"
+                "</form>",
+                6,
             )
-        body += "</table>"
+        body += _table(
+            ["Квест", "Статус", "Начат", "Завершён", "Подарок", "Действия"],
+            attempt_rows,
+            "Нет прохождений",
+        )
 
     return layout(f"Пользователь #{uid}", body, user=current_admin, active="users")
 
@@ -318,20 +353,20 @@ def quests_list(quests, user=None):
             "published": _badge("Опубликован", "green"),
             "archived": _badge("Архив", "red"),
         }
+        quest_link = f"<a href='/admin/quests/{qid}'>{_escape(quest['name'])}</a>"
+        open_button = f"<a href='/admin/quests/{qid}' class='btn btn-primary btn-sm'>Открыть</a>"
         rows += (
             "<tr>"
-            f"<td>{qid}</td>"
-            f"<td><a href='/admin/quests/{qid}'>{_escape(quest['name'])}</a></td>"
-            f"<td>{status_map.get(quest['status'], _escape(quest['status']))}</td>"
-            f"<td>{_escape(quest['start_date'] or '—')}</td>"
-            f"<td>{_escape(quest['end_date'] or '—')}</td>"
-            f"<td>{quest['max_attempts']}</td>"
-            f"<td>{'Да' if quest['allow_retry_before_gift'] else 'Нет'}</td>"
-            f"<td><a href='/admin/quests/{qid}' class='btn btn-primary btn-sm'>Открыть</a></td>"
+            f"{_cell('ID', str(qid))}"
+            f"{_cell('Название', quest_link)}"
+            f"{_cell('Статус', status_map.get(quest['status'], _escape(quest['status'])))}"
+            f"{_cell('Начало', _escape(quest['start_date'] or '—'))}"
+            f"{_cell('Конец', _escape(quest['end_date'] or '—'))}"
+            f"{_cell('Попыток', str(quest['max_attempts']))}"
+            f"{_cell('Повтор до подарка', 'Да' if quest['allow_retry_before_gift'] else 'Нет')}"
+            f"{_cell('Действия', open_button)}"
             "</tr>"
         )
-    if not rows:
-        rows = '<tr><td colspan="8" class="empty">Нет квестов</td></tr>'
 
     create_button = ""
     if _is_admin(user):
@@ -339,9 +374,7 @@ def quests_list(quests, user=None):
 
     body = f"""<h1>🗺️ Квесты</h1>
 {create_button}
-<table style="margin-top:16px"><tr>
-<th>ID</th><th>Название</th><th>Статус</th><th>Начало</th><th>Конец</th><th>Попыток</th><th>Повтор до подарка</th><th></th></tr>
-{rows}</table>"""
+<div style="margin-top:16px">{_table(["ID", "Название", "Статус", "Начало", "Конец", "Попыток", "Повтор до подарка", "Действия"], rows, "Нет квестов")}</div>"""
     return layout("Квесты", body, user=user, active="quests")
 
 
@@ -413,17 +446,15 @@ def quest_detail(quest, questions, attempts, user=None):
             )
         question_rows += (
             "<tr>"
-            f"<td>{question['order_num']}</td>"
-            f"<td>{_escape(question['task_text'])}</td>"
-            f"<td>{_escape(question['correct_answer'])}</td>"
-            f"<td>{_escape(question['semantic_mode'] or 'simple')}</td>"
-            f"<td>{question['semantic_threshold']}</td>"
-            f"<td>{_escape(question['attempts_override'] or 'из квеста')}</td>"
-            f"<td>{actions}</td>"
+            f"{_cell('№', str(question['order_num']))}"
+            f"{_cell('Задание', _escape(question['task_text']))}"
+            f"{_cell('Ответ', _escape(question['correct_answer']))}"
+            f"{_cell('Режим', _escape(question['semantic_mode'] or 'simple'))}"
+            f"{_cell('Порог', _escape(question['semantic_threshold']))}"
+            f"{_cell('Попытки', _escape(question['attempts_override'] or 'из квеста'))}"
+            f"{_cell('Действия', actions)}"
             "</tr>"
         )
-    if not question_rows:
-        question_rows = '<tr><td colspan="7" class="empty">Нет вопросов</td></tr>'
 
     attempt_rows = ""
     for attempt in attempts:
@@ -437,15 +468,13 @@ def quest_detail(quest, questions, attempts, user=None):
             )
         attempt_rows += (
             "<tr>"
-            f"<td>{_escape(attempt['max_user_id'])}</td>"
-            f"<td>{_escape(attempt['phone'] or '—')}</td>"
-            f"<td>{'Завершён' if attempt['status'] == 'completed' else 'В процессе'}</td>"
-            f"<td>{gift_state}</td>"
-            f"<td>{_escape(attempt['started_at'] or '')}</td>"
+            f"{_cell('MAX ID', _escape(attempt['max_user_id']))}"
+            f"{_cell('Телефон', _escape(attempt['phone'] or '—'))}"
+            f"{_cell('Статус', 'Завершён' if attempt['status'] == 'completed' else 'В процессе')}"
+            f"{_cell('Подарок', gift_state)}"
+            f"{_cell('Дата старта', _escape(attempt['started_at'] or ''))}"
             "</tr>"
         )
-    if not attempt_rows:
-        attempt_rows = '<tr><td colspan="5" class="empty">Нет прохождений</td></tr>'
 
     question_tools = ""
     if _is_admin(user):
@@ -473,12 +502,10 @@ def quest_detail(quest, questions, attempts, user=None):
 
 <h2>❓ Вопросы ({len(questions)})</h2>
 <div class="actions">{question_tools}</div>
-<table><tr><th>№</th><th>Задание</th><th>Ответ</th><th>Режим</th><th>Порог</th><th>Попытки</th><th></th></tr>
-{question_rows}</table>
+{_table(["№", "Задание", "Ответ", "Режим", "Порог", "Попытки", "Действия"], question_rows, "Нет вопросов")}
 
 <h2>👥 Прохождения ({len(attempts)})</h2>
-<table><tr><th>MAX ID</th><th>Телефон</th><th>Статус</th><th>Подарок</th><th>Дата старта</th></tr>
-{attempt_rows}</table>"""
+{_table(["MAX ID", "Телефон", "Статус", "Подарок", "Дата старта"], attempt_rows, "Нет прохождений")}"""
     return layout(quest["name"], body, user=user, active="quests")
 
 
@@ -534,23 +561,22 @@ def staff_page(admins, current_admin, error=""):
             role_options.append(
                 f"<option value='{role}'{selected}>{_escape(_role_label(role))}</option>"
             )
-        rows += (
-            "<tr>"
-            f"<td>{admin['id']}</td>"
-            f"<td>{_escape(admin['username'])}</td>"
-            f"<td>{_escape(_role_label(admin['role']))}</td>"
-            f"<td>{_escape(admin['created_at'] or '')}</td>"
-            "<td>"
+        manage_form = (
             f"<form method='POST' action='/admin/staff/{admin['id']}' class='inline-form'>"
             f"<select name='role'>{''.join(role_options)}</select>"
             "<input type='password' name='password' placeholder='Новый пароль'>"
             "<button class='btn btn-primary btn-sm'>Сохранить</button>"
             "</form>"
-            "</td>"
+        )
+        rows += (
+            "<tr>"
+            f"{_cell('ID', str(admin['id']))}"
+            f"{_cell('Логин', _escape(admin['username']))}"
+            f"{_cell('Роль', _escape(_role_label(admin['role'])))}"
+            f"{_cell('Создан', _escape(admin['created_at'] or ''))}"
+            f"{_cell('Управление', manage_form)}"
             "</tr>"
         )
-    if not rows:
-        rows = '<tr><td colspan="5" class="empty">Нет сотрудников</td></tr>'
 
     err = f'<div class="error">{_escape(error)}</div>' if error else ""
     body = f"""<h1>🛡️ Сотрудники</h1>
@@ -569,6 +595,5 @@ def staff_page(admins, current_admin, error=""):
 </form>
 </div>
 <h2>Текущая команда</h2>
-<table><tr><th>ID</th><th>Логин</th><th>Роль</th><th>Создан</th><th>Управление</th></tr>
-{rows}</table>"""
+{_table(["ID", "Логин", "Роль", "Создан", "Управление"], rows, "Нет сотрудников")}"""
     return layout("Сотрудники", body, user=current_admin, active="staff")
