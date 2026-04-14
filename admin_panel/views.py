@@ -114,6 +114,21 @@ form{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0
 .muted{{color:#636e72;font-size:12px}}
 details summary{{cursor:pointer;color:#636e72}}
 code{{background:#f1f2f6;padding:2px 4px;border-radius:4px}}
+@media (max-width: 900px){{
+body{{display:block;min-height:auto}}
+.sidebar{{position:static;width:100%;display:flex;gap:8px;padding:10px;overflow-x:auto;overflow-y:hidden;white-space:nowrap}}
+.sidebar a{{flex:0 0 auto;padding:10px 14px;border-radius:8px;background:rgba(255,255,255,.06)}}
+.content{{margin-left:0;padding:16px;max-width:none;width:100%}}
+.stats-grid,.card-grid{{grid-template-columns:1fr}}
+.actions{{display:flex;flex-direction:column;align-items:stretch;gap:8px}}
+.actions a,.actions button,.actions form{{margin-right:0;width:100%}}
+form{{max-width:none}}
+.inline-form{{flex-direction:column;align-items:stretch}}
+.inline-form input,.inline-form select,.inline-form button{{width:100%;min-width:0}}
+.login-box{{max-width:none;margin:24px auto;padding:24px}}
+table{{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}}
+th,td{{padding:10px 12px}}
+}}
 </style>
 </head>
 <body>
@@ -284,7 +299,7 @@ def user_detail(user, attempts, answer_logs_map, current_admin):
             body += (
                 "<tr><td colspan='6'>"
                 f"<form method='POST' action='/admin/attempts/{attempt['id']}/comment' class='inline-form'>"
-                f"<input type='text' name='comment' value='{_escape(comment_value)}' placeholder='Комментарий по прохождению' style='flex:1;min-width:320px'>"
+                f"<input type='text' name='comment' value='{_escape(comment_value)}' placeholder='Комментарий по прохождению' style='flex:1'>"
                 "<button class='btn btn-secondary btn-sm'>💾 Сохранить комментарий</button>"
                 "</form>"
                 "</td></tr>"
