@@ -41,6 +41,8 @@ class Question:
     answer_variants: list[str]
     hint: str
     explanation: str
+    semantic_mode: str = "simple"
+    semantic_threshold: float = 0.6
     max_attempts: int | None = None
 
 

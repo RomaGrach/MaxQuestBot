@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 import sqlite3
 import threading
@@ -77,6 +78,7 @@ class Database:
                 start_date TEXT,
                 end_date TEXT,
                 max_attempts INTEGER DEFAULT 3,
+                allow_retry_before_gift INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             );
@@ -90,6 +92,8 @@ class Database:
                 correct_answer TEXT NOT NULL,
                 explanation TEXT DEFAULT '',
                 hint TEXT DEFAULT '',
+                semantic_mode TEXT DEFAULT 'simple',
+                semantic_threshold REAL DEFAULT 0.6,
                 attempts_override INTEGER DEFAULT NULL,
                 FOREIGN KEY (quest_id) REFERENCES quests(id) ON DELETE CASCADE
             );
@@ -122,6 +126,24 @@ class Database:
                 FOREIGN KEY (question_id) REFERENCES questions(id)
             );
             """
+        )
+        self._ensure_columns()
+
+    def _ensure_columns(self) -> None:
+        self._ensure_column("quests", "allow_retry_before_gift", "INTEGER DEFAULT 0")
+        self._ensure_column("questions", "semantic_mode", "TEXT DEFAULT 'simple'")
+        self._ensure_column("questions", "semantic_threshold", "REAL DEFAULT 0.6")
+        self.conn.commit()
+
+    def _ensure_column(self, table_name: str, column_name: str, definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name in columns:
+            return
+        self.conn.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
         )
 
     def _seed_demo_data(self) -> None:
@@ -299,6 +321,7 @@ class Database:
         start_date: str,
         end_date: str,
         max_attempts: int,
+        allow_retry_before_gift: bool,
     ) -> int:
         cursor = self.conn.cursor()
         cursor.execute(
@@ -310,9 +333,10 @@ class Database:
                 prize_location,
                 start_date,
                 end_date,
-                max_attempts
+                max_attempts,
+                allow_retry_before_gift
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name,
@@ -322,6 +346,7 @@ class Database:
                 start_date or None,
                 end_date or None,
                 max_attempts or 3,
+                int(allow_retry_before_gift),
             ),
         )
         self.conn.commit()
@@ -337,6 +362,7 @@ class Database:
         start_date: str,
         end_date: str,
         max_attempts: int,
+        allow_retry_before_gift: bool,
     ) -> None:
         self.conn.execute(
             """
@@ -349,6 +375,7 @@ class Database:
                 start_date = ?,
                 end_date = ?,
                 max_attempts = ?,
+                allow_retry_before_gift = ?,
                 updated_at = datetime('now')
             WHERE id = ?
             """,
@@ -360,6 +387,7 @@ class Database:
                 start_date or None,
                 end_date or None,
                 max_attempts or 3,
+                int(allow_retry_before_gift),
                 quest_id,
             ),
         )
@@ -398,6 +426,8 @@ class Database:
         correct_answer: str,
         explanation: str,
         hint: str,
+        semantic_mode: str = "simple",
+        semantic_threshold: float = 0.6,
         attempts_override: int | None = None,
     ) -> int:
         cursor = self.conn.cursor()
@@ -411,9 +441,11 @@ class Database:
                 correct_answer,
                 explanation,
                 hint,
+                semantic_mode,
+                semantic_threshold,
                 attempts_override
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 quest_id,
@@ -423,6 +455,8 @@ class Database:
                 correct_answer,
                 explanation,
                 hint,
+                semantic_mode,
+                semantic_threshold,
                 attempts_override,
             ),
         )
@@ -438,6 +472,8 @@ class Database:
         correct_answer: str,
         explanation: str,
         hint: str,
+        semantic_mode: str = "simple",
+        semantic_threshold: float = 0.6,
         attempts_override: int | None = None,
     ) -> None:
         self.conn.execute(
@@ -450,6 +486,8 @@ class Database:
                 correct_answer = ?,
                 explanation = ?,
                 hint = ?,
+                semantic_mode = ?,
+                semantic_threshold = ?,
                 attempts_override = ?
             WHERE id = ?
             """,
@@ -460,6 +498,8 @@ class Database:
                 correct_answer,
                 explanation,
                 hint,
+                semantic_mode,
+                semantic_threshold,
                 attempts_override,
                 question_id,
             ),
@@ -494,9 +534,10 @@ class Database:
     def get_attempts_for_user(self, user_id: int):
         return self.conn.execute(
             """
-            SELECT qa.*, q.name AS quest_name
+            SELECT qa.*, q.name AS quest_name, a.username AS gift_given_by_username
             FROM quest_attempts qa
             JOIN quests q ON qa.quest_id = q.id
+            LEFT JOIN admins a ON qa.gift_given_by = a.id
             WHERE qa.user_id = ?
             ORDER BY qa.started_at DESC
             """,
@@ -506,10 +547,11 @@ class Database:
     def get_all_attempts(self):
         return self.conn.execute(
             """
-            SELECT qa.*, q.name AS quest_name, u.max_user_id, u.phone
+            SELECT qa.*, q.name AS quest_name, u.max_user_id, u.phone, a.username AS gift_given_by_username
             FROM quest_attempts qa
             JOIN quests q ON qa.quest_id = q.id
             JOIN users u ON qa.user_id = u.id
+            LEFT JOIN admins a ON qa.gift_given_by = a.id
             ORDER BY qa.started_at DESC
             """
         ).fetchall()
@@ -517,9 +559,10 @@ class Database:
     def get_attempts_for_quest(self, quest_id: int):
         return self.conn.execute(
             """
-            SELECT qa.*, u.max_user_id, u.phone
+            SELECT qa.*, u.max_user_id, u.phone, a.username AS gift_given_by_username
             FROM quest_attempts qa
             JOIN users u ON qa.user_id = u.id
+            LEFT JOIN admins a ON qa.gift_given_by = a.id
             WHERE qa.quest_id = ?
             ORDER BY qa.started_at DESC
             """,
@@ -540,18 +583,25 @@ class Database:
         )
         self.conn.commit()
 
-    def mark_gift_given(self, attempt_id: int, admin_id: int, comment: str | None = None) -> None:
+    def mark_gift_given(
+        self,
+        attempt_id: int,
+        admin_id: int,
+        *,
+        gift_given_at: str | None = None,
+        comment: str | None = None,
+    ) -> None:
         self.conn.execute(
             """
             UPDATE quest_attempts
             SET
                 gift_given = 1,
-                gift_given_at = datetime('now'),
+                gift_given_at = COALESCE(?, datetime('now')),
                 gift_given_by = ?,
-                comment = ?
+                comment = COALESCE(?, comment)
             WHERE id = ?
             """,
-            (admin_id, comment or "", attempt_id),
+            (gift_given_at or None, admin_id, comment, attempt_id),
         )
         self.conn.commit()
 
@@ -617,17 +667,26 @@ class Database:
             "SELECT * FROM admins ORDER BY created_at"
         ).fetchall()
 
-    def create_admin(self, username: str, password_hash: str, role: str = "operator") -> None:
-        self.conn.execute(
+    def create_admin(self, username: str, password_hash: str, role: str = "operator") -> int:
+        cursor = self.conn.cursor()
+        cursor.execute(
             "INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)",
             (username, password_hash, role),
         )
         self.conn.commit()
+        return cursor.lastrowid
 
     def update_admin_password_hash(self, admin_id: int, password_hash: str) -> None:
         self.conn.execute(
             "UPDATE admins SET password_hash = ? WHERE id = ?",
             (password_hash, admin_id),
+        )
+        self.conn.commit()
+
+    def update_admin_role(self, admin_id: int, role: str) -> None:
+        self.conn.execute(
+            "UPDATE admins SET role = ? WHERE id = ?",
+            (role, admin_id),
         )
         self.conn.commit()
 
@@ -643,7 +702,13 @@ class Database:
         }
 
 
-def check_answer(user_answer: str, correct_answer: str) -> bool:
+def check_answer(
+    user_answer: str,
+    correct_answer: str,
+    *,
+    semantic_mode: str = "simple",
+    semantic_threshold: float = 0.6,
+) -> bool:
     user = user_answer.lower().strip()
     correct = correct_answer.lower().strip()
     if user == correct:
@@ -653,9 +718,25 @@ def check_answer(user_answer: str, correct_answer: str) -> bool:
     correct_clean = re.sub(r"[^\w\s]", "", correct).strip()
     if user_clean == correct_clean:
         return True
+
+    mode = (semantic_mode or "simple").strip().lower()
+    if mode == "exact":
+        return False
+
     if correct_clean in user_clean or user_clean in correct_clean:
         return True
 
     correct_words = set(correct_clean.split())
     user_words = set(user_clean.split())
-    return bool(correct_words) and correct_words.issubset(user_words)
+    if bool(correct_words) and correct_words.issubset(user_words):
+        return True
+
+    if mode == "contains":
+        return False
+
+    ratio = SequenceMatcher(None, user_clean, correct_clean).ratio()
+    overlap = 0.0
+    if correct_words:
+        overlap = len(correct_words & user_words) / len(correct_words)
+    threshold = max(0.0, min(float(semantic_threshold or 0), 1.0))
+    return max(ratio, overlap) >= threshold

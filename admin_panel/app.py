@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import sqlite3
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
@@ -95,6 +96,41 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             return None, login_redirect()
         return admin, None
 
+    def require_role(request: Request, *roles: str):
+        admin, redirect = require_admin(request)
+        if redirect:
+            return None, redirect
+        if roles and admin["role"] not in roles:
+            return admin, PlainTextResponse("Forbidden", status_code=403)
+        return admin, None
+
+    def require_superadmin(request: Request):
+        return require_role(request, "admin")
+
+    def _is_truthy(raw_value: str | None) -> bool:
+        if raw_value is None:
+            return False
+        return raw_value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def _normalize_gift_datetime(raw_value: str) -> str | None:
+        value = raw_value.strip()
+        if not value:
+            return None
+        value = value.replace("T", " ")
+        if len(value) == 16:
+            return f"{value}:00"
+        return value
+
+    def _render_staff_page(
+        *,
+        current_admin,
+        error: str = "",
+    ) -> HTMLResponse:
+        return render_html(
+            views.staff_page(get_db().get_all_admins(), current_admin, error=error),
+            user=current_admin,
+        )
+
     def _quest_id_from_question(question) -> int:
         return int(question["quest_id"])
 
@@ -150,7 +186,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         if redirect:
             return redirect
         return render_html(
-            views.dashboard(get_db().get_stats(), get_db().get_all_users()),
+            views.dashboard(get_db().get_stats(), get_db().get_all_users(), user=admin),
             user=admin,
         )
 
@@ -159,7 +195,10 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
-        return render_html(views.users_list(get_db().get_all_users()), user=admin)
+        return render_html(
+            views.users_list(get_db().get_all_users(), user=admin),
+            user=admin,
+        )
 
     @app.get("/admin/users/{user_id}", response_class=HTMLResponse)
     async def admin_user_detail(user_id: int, request: Request):
@@ -174,7 +213,10 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             attempt["id"]: get_db().get_answer_logs_for_attempt(attempt["id"])
             for attempt in attempts
         }
-        return render_html(views.user_detail(user, attempts, logs_map), user=admin)
+        return render_html(
+            views.user_detail(user, attempts, logs_map, admin),
+            user=admin,
+        )
 
     @app.post("/admin/users/{user_id}/comment")
     async def admin_user_comment(
@@ -197,14 +239,17 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
-        return render_html(views.quests_list(get_db().get_all_quests()), user=admin)
+        return render_html(
+            views.quests_list(get_db().get_all_quests(), user=admin),
+            user=admin,
+        )
 
     @app.get("/admin/quests/new", response_class=HTMLResponse)
     async def admin_quest_form(request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
-        return render_html(views.quest_form(), user=admin)
+        return render_html(views.quest_form(user=admin), user=admin)
 
     @app.post("/admin/quests")
     async def admin_quest_create(
@@ -216,8 +261,9 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         start_date: str = Form(default=""),
         end_date: str = Form(default=""),
         max_attempts: int = Form(default=3),
+        allow_retry_before_gift: str = Form(default=""),
     ):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         quest_id = get_db().create_quest(
@@ -228,6 +274,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             start_date,
             end_date,
             max_attempts,
+            _is_truthy(allow_retry_before_gift),
         )
         response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
         _set_session_cookie(response, username=admin["username"])
@@ -244,19 +291,19 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         questions = get_db().get_questions_for_quest(quest_id)
         attempts = get_db().get_attempts_for_quest(quest_id)
         return render_html(
-            views.quest_detail(quest, questions, attempts),
+            views.quest_detail(quest, questions, attempts, user=admin),
             user=admin,
         )
 
     @app.get("/admin/quests/{quest_id}/edit", response_class=HTMLResponse)
     async def admin_quest_edit_form(quest_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         quest = get_db().get_quest_by_id(quest_id)
         if quest is None:
             return PlainTextResponse("Quest not found", status_code=404)
-        return render_html(views.quest_form(dict(quest)), user=admin)
+        return render_html(views.quest_form(dict(quest), user=admin), user=admin)
 
     @app.post("/admin/quests/{quest_id}")
     async def admin_quest_update(
@@ -269,8 +316,9 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         start_date: str = Form(default=""),
         end_date: str = Form(default=""),
         max_attempts: int = Form(default=3),
+        allow_retry_before_gift: str = Form(default=""),
     ):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         if get_db().get_quest_by_id(quest_id) is None:
@@ -284,6 +332,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             start_date,
             end_date,
             max_attempts,
+            _is_truthy(allow_retry_before_gift),
         )
         response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
         _set_session_cookie(response, username=admin["username"])
@@ -291,7 +340,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.post("/admin/quests/{quest_id}/publish")
     async def admin_quest_publish(quest_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         get_db().update_quest_status(quest_id, "published")
@@ -301,7 +350,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.post("/admin/quests/{quest_id}/archive")
     async def admin_quest_archive(quest_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         get_db().update_quest_status(quest_id, "archived")
@@ -311,11 +360,9 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.post("/admin/quests/{quest_id}/delete")
     async def admin_quest_delete(quest_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
-        if admin["role"] != "admin":
-            return PlainTextResponse("Forbidden", status_code=403)
         get_db().delete_quest(quest_id)
         response = RedirectResponse(url="/admin/quests", status_code=303)
         _set_session_cookie(response, username=admin["username"])
@@ -323,12 +370,12 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.get("/admin/quests/{quest_id}/questions/new", response_class=HTMLResponse)
     async def admin_question_new_form(quest_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         if get_db().get_quest_by_id(quest_id) is None:
             return PlainTextResponse("Quest not found", status_code=404)
-        return render_html(views.question_form(quest_id), user=admin)
+        return render_html(views.question_form(quest_id, user=admin), user=admin)
 
     @app.post("/admin/quests/{quest_id}/questions")
     async def admin_question_create(
@@ -340,9 +387,11 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         correct_answer: str = Form(...),
         explanation: str = Form(default=""),
         hint: str = Form(default=""),
+        semantic_mode: str = Form(default="simple"),
+        semantic_threshold: float = Form(default=0.6),
         attempts_override: str = Form(default=""),
     ):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         if get_db().get_quest_by_id(quest_id) is None:
@@ -355,6 +404,8 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             correct_answer,
             explanation,
             hint,
+            semantic_mode.strip().lower() or "simple",
+            semantic_threshold,
             int(attempts_override) if attempts_override.strip() else None,
         )
         response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
@@ -367,7 +418,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         request: Request,
         csv_file: UploadFile = File(...),
     ):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         if get_db().get_quest_by_id(quest_id) is None:
@@ -385,6 +436,13 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
                 correct_answer=row.get("correct_answer", ""),
                 explanation=row.get("explanation", ""),
                 hint=row.get("hint", ""),
+                semantic_mode=(row.get("semantic_mode", "simple") or "simple").strip().lower(),
+                semantic_threshold=float(row.get("semantic_threshold", 0.6) or 0.6),
+                attempts_override=(
+                    int(row["attempts_override"])
+                    if row.get("attempts_override", "").strip()
+                    else None
+                ),
             )
             next_order += 1
         response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
@@ -393,14 +451,18 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.get("/admin/questions/{question_id}/edit", response_class=HTMLResponse)
     async def admin_question_edit_form(question_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         question = get_db().get_question_by_id(question_id)
         if question is None:
             return PlainTextResponse("Question not found", status_code=404)
         return render_html(
-            views.question_form(_quest_id_from_question(question), dict(question)),
+            views.question_form(
+                _quest_id_from_question(question),
+                dict(question),
+                user=admin,
+            ),
             user=admin,
         )
 
@@ -414,9 +476,11 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         correct_answer: str = Form(...),
         explanation: str = Form(default=""),
         hint: str = Form(default=""),
+        semantic_mode: str = Form(default="simple"),
+        semantic_threshold: float = Form(default=0.6),
         attempts_override: str = Form(default=""),
     ):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         question = get_db().get_question_by_id(question_id)
@@ -430,6 +494,8 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             correct_answer=correct_answer,
             explanation=explanation,
             hint=hint,
+            semantic_mode=semantic_mode.strip().lower() or "simple",
+            semantic_threshold=semantic_threshold,
             attempts_override=int(attempts_override) if attempts_override.strip() else None,
         )
         response = RedirectResponse(
@@ -441,7 +507,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
 
     @app.post("/admin/questions/{question_id}/delete")
     async def admin_question_delete(question_id: int, request: Request):
-        admin, redirect = require_admin(request)
+        admin, redirect = require_superadmin(request)
         if redirect:
             return redirect
         question = get_db().get_question_by_id(question_id)
@@ -454,14 +520,24 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         return response
 
     @app.post("/admin/attempts/{attempt_id}/gift")
-    async def admin_attempt_gift(attempt_id: int, request: Request):
+    async def admin_attempt_gift(
+        attempt_id: int,
+        request: Request,
+        gift_given_at: str = Form(default=""),
+        comment: str = Form(default=""),
+    ):
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
         attempt = get_db().get_attempt_by_id(attempt_id)
         if attempt is None or attempt["status"] != "completed":
             return PlainTextResponse("Attempt not found", status_code=404)
-        get_db().mark_gift_given(attempt_id, admin["id"])
+        get_db().mark_gift_given(
+            attempt_id,
+            admin["id"],
+            gift_given_at=_normalize_gift_datetime(gift_given_at),
+            comment=comment.strip() or None,
+        )
         response = RedirectResponse(url=f"/admin/users/{attempt['user_id']}", status_code=303)
         _set_session_cookie(response, username=admin["username"])
         return response
@@ -488,7 +564,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
-        return render_html(views.stats_page(get_db().get_stats()), user=admin)
+        return render_html(views.stats_page(get_db().get_stats(), user=admin), user=admin)
 
     @app.get("/admin/export")
     async def admin_export(request: Request):
@@ -507,6 +583,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
                 "дата_завершения",
                 "подарок_выдан",
                 "дата_выдачи_подарка",
+                "кто_выдал_подарок",
                 "комментарий",
             ]
         )
@@ -521,6 +598,7 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
                     attempt["completed_at"] or "",
                     "да" if attempt["gift_given"] else "нет",
                     attempt["gift_given_at"] or "",
+                    attempt["gift_given_by_username"] or "",
                     attempt["comment"] or "",
                 ]
             )
@@ -529,6 +607,94 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             media_type="text/csv; charset=utf-8",
         )
         response.headers["Content-Disposition"] = "attachment; filename=quest_stats.csv"
+        _set_session_cookie(response, username=admin["username"])
+        return response
+
+    @app.get("/admin/staff", response_class=HTMLResponse)
+    async def admin_staff(request: Request):
+        admin, redirect = require_superadmin(request)
+        if redirect:
+            return redirect
+        return _render_staff_page(current_admin=admin)
+
+    @app.post("/admin/staff")
+    async def admin_staff_create(
+        request: Request,
+        username: str = Form(default=""),
+        password: str = Form(default=""),
+        role: str = Form(default="operator"),
+    ):
+        admin, redirect = require_superadmin(request)
+        if redirect:
+            return redirect
+
+        normalized_username = username.strip()
+        normalized_role = role.strip().lower() or "operator"
+        if not normalized_username or not password.strip():
+            return _render_staff_page(
+                current_admin=admin,
+                error="Укажите логин и пароль для нового сотрудника.",
+            )
+        if normalized_role not in {"admin", "operator"}:
+            return _render_staff_page(
+                current_admin=admin,
+                error="Недопустимая роль сотрудника.",
+            )
+
+        try:
+            get_db().create_admin(
+                normalized_username,
+                hash_password(password.strip()),
+                normalized_role,
+            )
+        except sqlite3.IntegrityError:
+            return _render_staff_page(
+                current_admin=admin,
+                error="Сотрудник с таким логином уже существует.",
+            )
+
+        response = RedirectResponse(url="/admin/staff", status_code=303)
+        _set_session_cookie(response, username=admin["username"])
+        return response
+
+    @app.post("/admin/staff/{admin_id}")
+    async def admin_staff_update(
+        admin_id: int,
+        request: Request,
+        role: str = Form(default="operator"),
+        password: str = Form(default=""),
+    ):
+        admin, redirect = require_superadmin(request)
+        if redirect:
+            return redirect
+
+        target_admin = get_db().get_admin_by_id(admin_id)
+        if target_admin is None:
+            return PlainTextResponse("Admin not found", status_code=404)
+
+        normalized_role = role.strip().lower() or "operator"
+        if normalized_role not in {"admin", "operator"}:
+            return _render_staff_page(
+                current_admin=admin,
+                error="Недопустимая роль сотрудника.",
+            )
+
+        admin_count = sum(1 for item in get_db().get_all_admins() if item["role"] == "admin")
+        if (
+            target_admin["role"] == "admin"
+            and normalized_role != "admin"
+            and admin_count <= 1
+        ):
+            return _render_staff_page(
+                current_admin=admin,
+                error="В системе должен остаться хотя бы один администратор.",
+            )
+
+        get_db().update_admin_role(admin_id, normalized_role)
+        if password.strip():
+            get_db().update_admin_password_hash(admin_id, hash_password(password.strip()))
+
+        response = RedirectResponse(url="/admin/staff", status_code=303)
         _set_session_cookie(response, username=admin["username"])
         return response
 

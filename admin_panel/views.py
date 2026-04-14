@@ -1,11 +1,37 @@
 import html
-import urllib.parse
 
 
-def _escape(s):
-    if s is None:
+def _escape(value):
+    if value is None:
         return ""
-    return html.escape(str(s))
+    return html.escape(str(value))
+
+
+def _is_admin(user) -> bool:
+    if not user:
+        return False
+    try:
+        return user["role"] == "admin"
+    except Exception:
+        return False
+
+
+def _role_label(role: str) -> str:
+    return "Администратор" if role == "admin" else "Оператор"
+
+
+def _badge(text: str, kind: str) -> str:
+    return f'<span class="badge badge-{kind}">{_escape(text)}</span>'
+
+
+def _checked_attr(value) -> str:
+    return " checked" if value else ""
+
+
+def _datetime_local_value(raw_value) -> str:
+    if not raw_value:
+        return ""
+    return str(raw_value).replace(" ", "T")[:16]
 
 
 def layout(title, body, user=None, active=""):
@@ -18,16 +44,18 @@ def layout(title, body, user=None, active=""):
             ("stats", "📈 Статистика", "/admin/stats"),
             ("export", "📥 Экспорт CSV", "/admin/export"),
         ]
+        if _is_admin(user):
+            items.append(("staff", "🛡️ Сотрудники", "/admin/staff"))
+
         links = []
         for key, label, href in items:
             cls = ' class="active"' if key == active else ""
             links.append(f'<a href="{href}"{cls}>{label}</a>')
-        nav = (
-            '<nav class="sidebar">'
-            + "".join(links)
-            + f'<a href="/admin/logout">🚪 Выйти ({_escape(user["username"])})</a>'
-            + "</nav>"
+        links.append(
+            f'<a href="/admin/logout">🚪 Выйти ({_escape(user["username"])}, {_escape(_role_label(user["role"]))})</a>'
         )
+        nav = '<nav class="sidebar">' + "".join(links) + "</nav>"
+
     return f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -40,11 +68,12 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .sidebar{{width:220px;background:#2d3436;color:#fff;padding:20px 0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto}}
 .sidebar a{{display:block;padding:12px 20px;color:#dfe6e9;text-decoration:none;font-size:14px;transition:background .2s}}
 .sidebar a:hover,.sidebar a.active{{background:#636e72;color:#fff}}
-.content{{margin-left:220px;padding:30px;flex:1;max-width:960px}}
+.content{{margin-left:220px;padding:30px;flex:1;max-width:1180px}}
 h1{{font-size:24px;margin-bottom:20px}}
 h2{{font-size:20px;margin:20px 0 10px}}
+h3{{font-size:16px;margin-bottom:10px}}
 table{{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}}
-th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #eee;font-size:14px}}
+th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #eee;font-size:14px;vertical-align:top}}
 th{{background:#636e72;color:#fff;font-weight:600}}
 tr:hover{{background:#f8f9fa}}
 .badge{{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}}
@@ -59,15 +88,18 @@ tr:hover{{background:#f8f9fa}}
 .btn-danger{{background:#e17055}}
 .btn-secondary{{background:#636e72}}
 .btn-sm{{padding:5px 10px;font-size:12px}}
-form{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:600px}}
+form{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:720px}}
 .form-group{{margin-bottom:16px}}
 .form-group label{{display:block;margin-bottom:4px;font-weight:600;font-size:14px}}
 .form-group input,.form-group textarea,.form-group select{{width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px}}
 .form-group textarea{{min-height:80px;resize:vertical}}
-.actions{{margin-top:16px}}
+.checkbox-row{{display:flex;align-items:center;gap:8px}}
+.checkbox-row input{{width:auto}}
+.actions{{margin:16px 0}}
 .actions a,.actions button{{margin-right:8px}}
 .card{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:16px}}
-.card h3{{margin-bottom:10px;font-size:16px}}
+.card-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}}
+.card p{{margin-bottom:8px}}
 .stats-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:24px}}
 .stat-card{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center}}
 .stat-card .num{{font-size:32px;font-weight:700;color:#6c5ce7}}
@@ -75,9 +107,13 @@ form{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0
 .login-box{{max-width:360px;margin:80px auto;background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}}
 .login-box h1{{text-align:center;margin-bottom:24px}}
 .error{{background:#ffeaa7;padding:10px;border-radius:6px;margin-bottom:16px;color:#d63031}}
-.success{{background:#55efc4;padding:10px;border-radius:6px;margin-bottom:16px;color:#00b894}}
 .back-link{{margin-bottom:16px;display:inline-block;color:#6c5ce7;text-decoration:none}}
 .empty{{padding:20px;text-align:center;color:#636e72;font-style:italic}}
+.inline-form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:transparent;padding:0;box-shadow:none;max-width:none}}
+.inline-form input,.inline-form select{{width:auto;min-width:120px}}
+.muted{{color:#636e72;font-size:12px}}
+details summary{{cursor:pointer;color:#636e72}}
+code{{background:#f1f2f6;padding:2px 4px;border-radius:4px}}
 </style>
 </head>
 <body>
@@ -105,17 +141,17 @@ def login_page(error=""):
 
 def _users_table(users):
     rows = ""
-    for u in users:
-        uid = u["id"]
-        consent = "✅" if u["consent_given"] else "❌"
+    for user in users:
+        uid = user["id"]
+        consent = "✅" if user["consent_given"] else "❌"
         rows += (
             f"<tr>"
             f"<td>{uid}</td>"
-            f"<td><a href='/admin/users/{uid}'>{_escape(u['max_user_id'])}</a></td>"
-            f"<td>{_escape(u['phone'] or '—')}</td>"
-            f"<td>{int(u['completed_quests_count'] or 0)}</td>"
+            f"<td><a href='/admin/users/{uid}'>{_escape(user['max_user_id'])}</a></td>"
+            f"<td>{_escape(user['phone'] or '—')}</td>"
+            f"<td>{int(user['completed_quests_count'] or 0)}</td>"
             f"<td>{consent}</td>"
-            f"<td>{_escape(u['registered_at'] or '')}</td>"
+            f"<td>{_escape(user['registered_at'] or '')}</td>"
             f"</tr>"
         )
     if not rows:
@@ -126,7 +162,7 @@ def _users_table(users):
     )
 
 
-def dashboard(stats, users):
+def dashboard(stats, users, user=None):
     cards = ""
     items = [
         (stats["total_users"], "Пользователей"),
@@ -138,27 +174,26 @@ def dashboard(stats, users):
     ]
     for num, label in items:
         cards += f'<div class="stat-card"><div class="num">{num}</div><div class="label">{label}</div></div>'
-    users_table = _users_table(users)
     body = (
-        f"<h1>📊 Dashboard</h1>"
+        "<h1>📊 Dashboard</h1>"
         f"<div class='stats-grid'>{cards}</div>"
-        f"<div class='card'>"
-        f"<h2>👥 Авторизованные пользователи</h2>"
-        f"{users_table}"
-        f"</div>"
+        "<div class='card'>"
+        "<h2>👥 Авторизованные пользователи</h2>"
+        f"{_users_table(users)}"
+        "</div>"
     )
-    return layout("Dashboard", body, active="dashboard")
+    return layout("Dashboard", body, user=user, active="dashboard")
 
 
-def users_list(users):
-    body = f"""<h1>👥 Пользователи</h1>
-{_users_table(users)}"""
-    return layout("Пользователи", body, active="users")
+def users_list(users, user=None):
+    body = f"<h1>👥 Пользователи</h1>{_users_table(users)}"
+    return layout("Пользователи", body, user=user, active="users")
 
 
-def user_detail(user, attempts, answer_logs_map):
+def user_detail(user, attempts, answer_logs_map, current_admin):
     uid = user["id"]
     body = f"""<h1>👤 Пользователь #{uid}</h1>
+<div class="card-grid">
 <div class="card">
 <h3>Информация</h3>
 <p><strong>MAX ID:</strong> {_escape(user['max_user_id'])}</p>
@@ -166,7 +201,6 @@ def user_detail(user, attempts, answer_logs_map):
 <p><strong>Согласие:</strong> {'✅ Дано' if user['consent_given'] else '❌ Не дано'}</p>
 <p><strong>Дата регистрации:</strong> {_escape(user['registered_at'] or '')}</p>
 </div>
-
 <div class="card">
 <h3>Комментарий</h3>
 <form method="POST" action="/admin/users/{uid}/comment">
@@ -174,230 +208,296 @@ def user_detail(user, attempts, answer_logs_map):
 <button class="btn btn-primary btn-sm">Сохранить</button>
 </form>
 </div>
+</div>
 
 <h2>🎯 Прохождения квестов</h2>"""
 
     if not attempts:
         body += '<p class="empty">Нет прохождений</p>'
     else:
-        body += "<table><tr><th>Квест</th><th>Статус</th><th>Начат</th><th>Завершён</th><th>Подарок</th><th>Действия</th></tr>"
-        for a in attempts:
+        body += (
+            "<table><tr>"
+            "<th>Квест</th><th>Статус</th><th>Начат</th><th>Завершён</th><th>Подарок</th><th>Действия</th>"
+            "</tr>"
+        )
+        for attempt in attempts:
             status_badge = (
-                '<span class="badge badge-blue">В процессе</span>'
-                if a["status"] == "in_progress"
-                else '<span class="badge badge-green">Завершён</span>'
+                _badge("В процессе", "blue")
+                if attempt["status"] == "in_progress"
+                else _badge("Завершён", "green")
             )
-            gift_text = "—"
-            gift_btn = ""
-            if a["status"] == "completed":
-                if a["gift_given"]:
-                    gift_text = f'<span class="badge badge-green">✅ Выдан</span><br><small>{_escape(a["gift_given_at"] or "")}</small>'
+
+            gift_info = "—"
+            actions = ""
+            if attempt["status"] == "completed":
+                if attempt["gift_given"]:
+                    issuer = attempt["gift_given_by_username"] or "—"
+                    gift_info = (
+                        f"{_badge('✅ Выдан', 'green')}<br>"
+                        f"<small>{_escape(attempt['gift_given_at'] or '')}</small><br>"
+                        f"<small>Отметил: {_escape(issuer)}</small>"
+                    )
                 else:
-                    gift_text = '<span class="badge badge-yellow">Не выдан</span>'
-                    gift_btn = f'<form method="POST" action="/admin/attempts/{a["id"]}/gift" style="display:inline"><button class="btn btn-success btn-sm">🎁 Выдать</button></form>'
+                    gift_info = _badge("Не выдан", "yellow")
+                    actions = f"""
+<form method="POST" action="/admin/attempts/{attempt['id']}/gift" class="inline-form">
+<input type="datetime-local" name="gift_given_at" value="">
+<input type="text" name="comment" value="{_escape(attempt['comment'] or '')}" placeholder="Комментарий">
+<button class="btn btn-success btn-sm">🎁 Выдать</button>
+</form>"""
 
+            if not actions:
+                actions = '<span class="muted">Доп. действий нет</span>'
+
+            comment_value = attempt["comment"] or ""
             body += (
-                f"<tr>"
-                f"<td>{_escape(a['quest_name'])}</td>"
+                "<tr>"
+                f"<td>{_escape(attempt['quest_name'])}</td>"
                 f"<td>{status_badge}</td>"
-                f"<td>{_escape(a['started_at'] or '')}</td>"
-                f"<td>{_escape(a['completed_at'] or '—')}</td>"
-                f"<td>{gift_text}</td>"
-                f"<td>{gift_btn}</td>"
-                f"</tr>"
+                f"<td>{_escape(attempt['started_at'] or '')}</td>"
+                f"<td>{_escape(attempt['completed_at'] or '—')}</td>"
+                f"<td>{gift_info}</td>"
+                f"<td>{actions}</td>"
+                "</tr>"
             )
 
-            logs = answer_logs_map.get(a["id"], [])
+            logs = answer_logs_map.get(attempt["id"], [])
             if logs:
-                body += '<tr><td colspan="6" style="padding:0"><details><summary style="padding:8px 14px;cursor:pointer;font-size:13px;color:#636e72">📋 Логи ответов</summary><table style="margin:0;border:none">'
+                body += (
+                    '<tr><td colspan="6" style="padding:0">'
+                    '<details><summary style="padding:8px 14px">📋 Логи ответов</summary>'
+                    '<table style="margin:0;border:none"><tr><th>Статус</th><th>Вопрос</th><th>Ответ</th><th>Эталон</th><th>Время</th></tr>'
+                )
                 for log in logs:
                     mark = "✅" if log["is_correct"] else "❌"
                     body += (
-                        f"<tr><td>{mark}</td>"
-                        f"<td>{_escape(log['task_text'][:60])}...</td>"
+                        "<tr>"
+                        f"<td>{mark}</td>"
+                        f"<td>{_escape(log['task_text'])}</td>"
                         f"<td>{_escape(log['answer_text'])}</td>"
                         f"<td>{_escape(log['correct_answer'])}</td>"
-                        f"<td>{_escape(log['answered_at'] or '')}</td></tr>"
+                        f"<td>{_escape(log['answered_at'] or '')}</td>"
+                        "</tr>"
                     )
                 body += "</table></details></td></tr>"
 
             body += (
-                f'<tr><td colspan="6"><form method="POST" action="/admin/attempts/{a["id"]}/comment" '
-                f'style="display:flex;gap:8px;align-items:center;padding:6px 14px">'
-                f'<input type="text" name="comment" value="{_escape(a["comment"] or "")}" '
-                f'placeholder="Комментарий" style="flex:1;padding:4px 8px;border:1px solid #ddd;border-radius:4px">'
-                f'<button class="btn btn-secondary btn-sm">💾</button></form></td></tr>'
+                "<tr><td colspan='6'>"
+                f"<form method='POST' action='/admin/attempts/{attempt['id']}/comment' class='inline-form'>"
+                f"<input type='text' name='comment' value='{_escape(comment_value)}' placeholder='Комментарий по прохождению' style='flex:1;min-width:320px'>"
+                "<button class='btn btn-secondary btn-sm'>💾 Сохранить комментарий</button>"
+                "</form>"
+                "</td></tr>"
             )
-
         body += "</table>"
 
-    return layout(f"Пользователь #{uid}", body, active="users")
+    return layout(f"Пользователь #{uid}", body, user=current_admin, active="users")
 
 
-def quests_list(quests):
+def quests_list(quests, user=None):
     rows = ""
-    for q in quests:
-        qid = q["id"]
+    for quest in quests:
+        qid = quest["id"]
         status_map = {
-            "draft": '<span class="badge badge-yellow">Черновик</span>',
-            "published": '<span class="badge badge-green">Опубликован</span>',
-            "archived": '<span class="badge badge-red">Архив</span>',
+            "draft": _badge("Черновик", "yellow"),
+            "published": _badge("Опубликован", "green"),
+            "archived": _badge("Архив", "red"),
         }
-        st = status_map.get(q["status"], q["status"])
         rows += (
-            f"<tr>"
+            "<tr>"
             f"<td>{qid}</td>"
-            f"<td><a href='/admin/quests/{qid}'>{_escape(q['name'])}</a></td>"
-            f"<td>{st}</td>"
-            f"<td>{_escape(q['start_date'] or '—')}</td>"
-            f"<td>{_escape(q['end_date'] or '—')}</td>"
-            f"<td>{q['max_attempts']}</td>"
-            f"<td>"
-            f"<a href='/admin/quests/{qid}' class='btn btn-primary btn-sm'>Открыть</a> "
-            f"</td></tr>"
+            f"<td><a href='/admin/quests/{qid}'>{_escape(quest['name'])}</a></td>"
+            f"<td>{status_map.get(quest['status'], _escape(quest['status']))}</td>"
+            f"<td>{_escape(quest['start_date'] or '—')}</td>"
+            f"<td>{_escape(quest['end_date'] or '—')}</td>"
+            f"<td>{quest['max_attempts']}</td>"
+            f"<td>{'Да' if quest['allow_retry_before_gift'] else 'Нет'}</td>"
+            f"<td><a href='/admin/quests/{qid}' class='btn btn-primary btn-sm'>Открыть</a></td>"
+            "</tr>"
         )
     if not rows:
-        rows = '<tr><td colspan="7" class="empty">Нет квестов</td></tr>'
+        rows = '<tr><td colspan="8" class="empty">Нет квестов</td></tr>'
+
+    create_button = ""
+    if _is_admin(user):
+        create_button = '<a href="/admin/quests/new" class="btn btn-primary">+ Создать квест</a>'
+
     body = f"""<h1>🗺️ Квесты</h1>
-<a href="/admin/quests/new" class="btn btn-primary">+ Создать квест</a>
+{create_button}
 <table style="margin-top:16px"><tr>
-<th>ID</th><th>Название</th><th>Статус</th><th>Начало</th><th>Конец</th><th>Попыток</th><th></th></tr>
+<th>ID</th><th>Название</th><th>Статус</th><th>Начало</th><th>Конец</th><th>Попыток</th><th>Повтор до подарка</th><th></th></tr>
 {rows}</table>"""
-    return layout("Квесты", body, active="quests")
+    return layout("Квесты", body, user=user, active="quests")
 
 
-def quest_form(quest=None, error=""):
+def quest_form(quest=None, error="", user=None):
     is_edit = quest is not None
     title = "Редактирование квеста" if is_edit else "Новый квест"
     action = f"/admin/quests/{quest['id']}" if is_edit else "/admin/quests"
-    v = quest or {}
+    values = quest or {}
     err = f'<div class="error">{_escape(error)}</div>' if error else ""
     body = f"""<h1>{title}</h1>
 <a href="/admin/quests" class="back-link">← Назад к списку</a>
 {err}
 <form method="POST" action="{action}">
-<div class="form-group"><label>Название</label><input name="name" value="{_escape(v.get('name',''))}" required></div>
-<div class="form-group"><label>Описание</label><textarea name="description">{_escape(v.get('description',''))}</textarea></div>
-<div class="form-group"><label>Точка начала</label><input name="start_point" value="{_escape(v.get('start_point',''))}"></div>
-<div class="form-group"><label>Место получения приза</label><input name="prize_location" value="{_escape(v.get('prize_location',''))}"></div>
-<div class="form-group"><label>Дата начала</label><input type="date" name="start_date" value="{_escape(v.get('start_date','') or '')}"></div>
-<div class="form-group"><label>Дата окончания</label><input type="date" name="end_date" value="{_escape(v.get('end_date','') or '')}"></div>
-<div class="form-group"><label>Попыток на вопрос (0=∞)</label><input type="number" name="max_attempts" value="{v.get('max_attempts',3)}" min="0"></div>
+<div class="form-group"><label>Название</label><input name="name" value="{_escape(values.get('name', ''))}" required></div>
+<div class="form-group"><label>Описание</label><textarea name="description">{_escape(values.get('description', ''))}</textarea></div>
+<div class="form-group"><label>Точка начала</label><input name="start_point" value="{_escape(values.get('start_point', ''))}"></div>
+<div class="form-group"><label>Место получения приза</label><input name="prize_location" value="{_escape(values.get('prize_location', ''))}"></div>
+<div class="form-group"><label>Дата начала</label><input type="date" name="start_date" value="{_escape(values.get('start_date', '') or '')}"></div>
+<div class="form-group"><label>Дата окончания</label><input type="date" name="end_date" value="{_escape(values.get('end_date', '') or '')}"></div>
+<div class="form-group"><label>Попыток на вопрос (0 = без ограничений)</label><input type="number" name="max_attempts" value="{values.get('max_attempts', 3)}" min="0"></div>
+<div class="form-group">
+<label class="checkbox-row">
+<input type="checkbox" name="allow_retry_before_gift"{_checked_attr(values.get('allow_retry_before_gift'))}>
+<span>Разрешить повторное прохождение до выдачи подарка</span>
+</label>
+<div class="muted">Если выключено, после завершения квеста повторный запуск запрещён до решения сотрудника.</div>
+</div>
 <button class="btn btn-primary">Сохранить</button>
 </form>"""
-    return layout(title, body, active="quests")
+    return layout(title, body, user=user, active="quests")
 
 
-def quest_detail(quest, questions, attempts):
+def quest_detail(quest, questions, attempts, user=None):
     qid = quest["id"]
     status_map = {
-        "draft": '<span class="badge badge-yellow">Черновик</span>',
-        "published": '<span class="badge badge-green">Опубликован</span>',
-        "archived": '<span class="badge badge-red">Архив</span>',
+        "draft": _badge("Черновик", "yellow"),
+        "published": _badge("Опубликован", "green"),
+        "archived": _badge("Архив", "red"),
     }
-    st = status_map.get(quest["status"], quest["status"])
-
-    action_btns = ""
-    if quest["status"] == "draft":
-        action_btns = f'<form method="POST" action="/admin/quests/{qid}/publish" style="display:inline"><button class="btn btn-success">Опубликовать</button></form> '
-    elif quest["status"] == "published":
-        action_btns = f'<form method="POST" action="/admin/quests/{qid}/archive" style="display:inline"><button class="btn btn-secondary">В архив</button></form> '
-
-    qrows = ""
-    for q in questions:
-        qrows += (
-            f"<tr>"
-            f"<td>{q['order_num']}</td>"
-            f"<td>{_escape(q['task_text'][:80])}</td>"
-            f"<td>{_escape(q['correct_answer'])}</td>"
-            f"<td>"
-            f"<a href='/admin/questions/{q['id']}/edit' class='btn btn-primary btn-sm'>✏️</a> "
-            f"<form method='POST' action='/admin/questions/{q['id']}/delete' style='display:inline'>"
-            f"<button class='btn btn-danger btn-sm' onclick='return confirm(\"Удалить?\")'>🗑️</button></form>"
-            f"</td></tr>"
+    controls = ""
+    publish_button = ""
+    if _is_admin(user):
+        controls += f'<a href="/admin/quests/{qid}/edit" class="btn btn-primary">✏️ Редактировать</a>'
+        if quest["status"] == "draft":
+            publish_button = (
+                f'<form method="POST" action="/admin/quests/{qid}/publish" class="inline-form">'
+                '<button class="btn btn-success">Опубликовать</button></form>'
+            )
+        elif quest["status"] == "published":
+            publish_button = (
+                f'<form method="POST" action="/admin/quests/{qid}/archive" class="inline-form">'
+                '<button class="btn btn-secondary">В архив</button></form>'
+            )
+        controls += publish_button
+        controls += (
+            f"<form method='POST' action='/admin/quests/{qid}/delete' class='inline-form' "
+            "onsubmit=\"return confirm('Удалить квест и все вопросы?')\">"
+            "<button class='btn btn-danger'>🗑️ Удалить</button></form>"
         )
-    if not qrows:
-        qrows = '<tr><td colspan="4" class="empty">Нет вопросов</td></tr>'
 
-    arows = ""
-    for a in attempts:
-        gift = "✅" if a["gift_given"] else "❌"
-        status = "Завершён" if a["status"] == "completed" else "В процессе"
-        arows += (
-            f"<tr>"
-            f"<td>{_escape(a['max_user_id'])}</td>"
-            f"<td>{_escape(a['phone'] or '—')}</td>"
-            f"<td>{status}</td>"
-            f"<td>{gift}</td>"
-            f"<td>{_escape(a['started_at'] or '')}</td>"
-            f"</tr>"
+    question_rows = ""
+    for question in questions:
+        actions = '<span class="muted">Только просмотр</span>'
+        if _is_admin(user):
+            actions = (
+                f"<a href='/admin/questions/{question['id']}/edit' class='btn btn-primary btn-sm'>✏️</a> "
+                f"<form method='POST' action='/admin/questions/{question['id']}/delete' class='inline-form'>"
+                "<button class='btn btn-danger btn-sm' onclick='return confirm(\"Удалить?\")'>🗑️</button></form>"
+            )
+        question_rows += (
+            "<tr>"
+            f"<td>{question['order_num']}</td>"
+            f"<td>{_escape(question['task_text'])}</td>"
+            f"<td>{_escape(question['correct_answer'])}</td>"
+            f"<td>{_escape(question['semantic_mode'] or 'simple')}</td>"
+            f"<td>{question['semantic_threshold']}</td>"
+            f"<td>{_escape(question['attempts_override'] or 'из квеста')}</td>"
+            f"<td>{actions}</td>"
+            "</tr>"
         )
-    if not arows:
-        arows = '<tr><td colspan="5" class="empty">Нет прохождений</td></tr>'
+    if not question_rows:
+        question_rows = '<tr><td colspan="7" class="empty">Нет вопросов</td></tr>'
+
+    attempt_rows = ""
+    for attempt in attempts:
+        gift_state = "✅"
+        if not attempt["gift_given"]:
+            gift_state = "❌"
+        if attempt["gift_given"] and attempt["gift_given_by_username"]:
+            gift_state = (
+                f"✅<br><small>{_escape(attempt['gift_given_at'] or '')}</small><br>"
+                f"<small>{_escape(attempt['gift_given_by_username'])}</small>"
+            )
+        attempt_rows += (
+            "<tr>"
+            f"<td>{_escape(attempt['max_user_id'])}</td>"
+            f"<td>{_escape(attempt['phone'] or '—')}</td>"
+            f"<td>{'Завершён' if attempt['status'] == 'completed' else 'В процессе'}</td>"
+            f"<td>{gift_state}</td>"
+            f"<td>{_escape(attempt['started_at'] or '')}</td>"
+            "</tr>"
+        )
+    if not attempt_rows:
+        attempt_rows = '<tr><td colspan="5" class="empty">Нет прохождений</td></tr>'
+
+    question_tools = ""
+    if _is_admin(user):
+        question_tools = (
+            f'<a href="/admin/quests/{qid}/questions/new" class="btn btn-primary btn-sm">+ Добавить вопрос</a>'
+            f'<form method="POST" action="/admin/quests/{qid}/questions/import" enctype="multipart/form-data" class="inline-form" style="margin-left:8px">'
+            '<input type="file" name="csv_file" accept=".csv">'
+            '<button class="btn btn-secondary btn-sm">📥 Импорт CSV</button>'
+            "</form>"
+        )
 
     body = f"""<h1>🗺️ {_escape(quest['name'])}</h1>
 <a href="/admin/quests" class="back-link">← Назад к списку</a>
-
 <div class="card">
 <h3>Информация</h3>
-<p><strong>Статус:</strong> {st}</p>
+<p><strong>Статус:</strong> {status_map.get(quest['status'], _escape(quest['status']))}</p>
 <p><strong>Описание:</strong> {_escape(quest['description'] or '—')}</p>
 <p><strong>Точка начала:</strong> {_escape(quest['start_point'] or '—')}</p>
-<p><strong>Приз:</strong> {_escape(quest['prize_location'] or '—')}</p>
+<p><strong>Инструкция по призу:</strong> {_escape(quest['prize_location'] or '—')}</p>
 <p><strong>Даты:</strong> {_escape(quest['start_date'] or '∞')} — {_escape(quest['end_date'] or '∞')}</p>
 <p><strong>Попыток на вопрос:</strong> {quest['max_attempts']}</p>
+<p><strong>Повтор до подарка:</strong> {'Да' if quest['allow_retry_before_gift'] else 'Нет'}</p>
 </div>
-
-<div class="actions">
-<a href="/admin/quests/{qid}/edit" class="btn btn-primary">✏️ Редактировать</a>
-{action_btns}
-<form method="POST" action="/admin/quests/{qid}/delete" style="display:inline"
-  onsubmit="return confirm('Удалить квест и все вопросы?')">
-<button class="btn btn-danger">🗑️ Удалить</button></form>
-</div>
+<div class="actions">{controls}</div>
 
 <h2>❓ Вопросы ({len(questions)})</h2>
-<a href="/admin/quests/{qid}/questions/new" class="btn btn-primary btn-sm">+ Добавить вопрос</a>
-<form method="POST" action="/admin/quests/{qid}/questions/import" enctype="multipart/form-data"
-  style="display:inline;margin-left:8px">
-<input type="file" name="csv_file" accept=".csv" style="display:inline;font-size:13px">
-<button class="btn btn-secondary btn-sm">📥 Импорт CSV</button>
-</form>
-<table style="margin-top:12px"><tr><th>№</th><th>Задание</th><th>Ответ</th><th></th></tr>
-{qrows}</table>
+<div class="actions">{question_tools}</div>
+<table><tr><th>№</th><th>Задание</th><th>Ответ</th><th>Режим</th><th>Порог</th><th>Попытки</th><th></th></tr>
+{question_rows}</table>
 
-<h2>👥 Прошедшие ({len(attempts)})</h2>
-<table><tr><th>MAX ID</th><th>Телефон</th><th>Статус</th><th>Подарок</th><th>Дата</th></tr>
-{arows}</table>"""
-
-    return layout(quest["name"], body, active="quests")
+<h2>👥 Прохождения ({len(attempts)})</h2>
+<table><tr><th>MAX ID</th><th>Телефон</th><th>Статус</th><th>Подарок</th><th>Дата старта</th></tr>
+{attempt_rows}</table>"""
+    return layout(quest["name"], body, user=user, active="quests")
 
 
-def question_form(quest_id, question=None):
+def question_form(quest_id, question=None, user=None):
     is_edit = question is not None
     title = "Редактирование вопроса" if is_edit else "Новый вопрос"
-    action = (
-        f"/admin/questions/{question['id']}"
-        if is_edit
-        else f"/admin/quests/{quest_id}/questions"
-    )
-    v = question or {}
+    action = f"/admin/questions/{question['id']}" if is_edit else f"/admin/quests/{quest_id}/questions"
+    values = question or {}
     body = f"""<h1>{title}</h1>
 <a href="/admin/quests/{quest_id}" class="back-link">← Назад к квесту</a>
 <form method="POST" action="{action}">
-<div class="form-group"><label>Порядковый номер</label><input type="number" name="order_num" value="{v.get('order_num',1)}" min="1" required></div>
-<div class="form-group"><label>Справка/контекст</label><textarea name="context">{_escape(v.get('context',''))}</textarea></div>
-<div class="form-group"><label>Задание</label><textarea name="task_text" required>{_escape(v.get('task_text',''))}</textarea></div>
-<div class="form-group"><label>Правильный ответ</label><input name="correct_answer" value="{_escape(v.get('correct_answer',''))}" required></div>
-<div class="form-group"><label>Пояснение</label><textarea name="explanation">{_escape(v.get('explanation',''))}</textarea></div>
-<div class="form-group"><label>Подсказка</label><textarea name="hint">{_escape(v.get('hint',''))}</textarea></div>
-<div class="form-group"><label>Попыток (переопределение, пусто = из квеста)</label><input type="number" name="attempts_override" value="{v.get('attempts_override') or ''}" min="0"></div>
+<div class="form-group"><label>Порядковый номер</label><input type="number" name="order_num" value="{values.get('order_num', 1)}" min="1" required></div>
+<div class="form-group"><label>Справка / контекст</label><textarea name="context">{_escape(values.get('context', ''))}</textarea></div>
+<div class="form-group"><label>Задание</label><textarea name="task_text" required>{_escape(values.get('task_text', ''))}</textarea></div>
+<div class="form-group"><label>Правильный ответ</label><input name="correct_answer" value="{_escape(values.get('correct_answer', ''))}" required></div>
+<div class="form-group"><label>Пояснение</label><textarea name="explanation">{_escape(values.get('explanation', ''))}</textarea></div>
+<div class="form-group"><label>Подсказка</label><textarea name="hint">{_escape(values.get('hint', ''))}</textarea></div>
+<div class="form-group">
+<label>Режим проверки по смыслу</label>
+<select name="semantic_mode">
+<option value="simple"{' selected' if values.get('semantic_mode', 'simple') == 'simple' else ''}>simple</option>
+<option value="contains"{' selected' if values.get('semantic_mode') == 'contains' else ''}>contains</option>
+<option value="exact"{' selected' if values.get('semantic_mode') == 'exact' else ''}>exact</option>
+</select>
+<div class="muted">simple = мягкое сравнение, contains = вхождение / слова, exact = только точное совпадение.</div>
+</div>
+<div class="form-group"><label>Порог семантического совпадения</label><input type="number" name="semantic_threshold" min="0" max="1" step="0.05" value="{values.get('semantic_threshold', 0.6)}"></div>
+<div class="form-group"><label>Попыток (переопределение, пусто = из квеста)</label><input type="number" name="attempts_override" value="{values.get('attempts_override') or ''}" min="0"></div>
 <button class="btn btn-primary">Сохранить</button>
 </form>"""
-    return layout(title, body, active="quests")
+    return layout(title, body, user=user, active="quests")
 
 
-def stats_page(stats):
+def stats_page(stats, user=None):
     body = f"""<h1>📈 Статистика</h1>
 <div class="stats-grid">
 <div class="stat-card"><div class="num">{stats['total_users']}</div><div class="label">Пользователей</div></div>
@@ -407,4 +507,53 @@ def stats_page(stats):
 <div class="stat-card"><div class="num">{stats['active_attempts']}</div><div class="label">Активных прохождений</div></div>
 <div class="stat-card"><div class="num">{stats['gifts_given']}</div><div class="label">Подарков выдано</div></div>
 </div>"""
-    return layout("Статистика", body, active="stats")
+    return layout("Статистика", body, user=user, active="stats")
+
+
+def staff_page(admins, current_admin, error=""):
+    rows = ""
+    for admin in admins:
+        role_options = []
+        for role in ("admin", "operator"):
+            selected = " selected" if admin["role"] == role else ""
+            role_options.append(
+                f"<option value='{role}'{selected}>{_escape(_role_label(role))}</option>"
+            )
+        rows += (
+            "<tr>"
+            f"<td>{admin['id']}</td>"
+            f"<td>{_escape(admin['username'])}</td>"
+            f"<td>{_escape(_role_label(admin['role']))}</td>"
+            f"<td>{_escape(admin['created_at'] or '')}</td>"
+            "<td>"
+            f"<form method='POST' action='/admin/staff/{admin['id']}' class='inline-form'>"
+            f"<select name='role'>{''.join(role_options)}</select>"
+            "<input type='password' name='password' placeholder='Новый пароль'>"
+            "<button class='btn btn-primary btn-sm'>Сохранить</button>"
+            "</form>"
+            "</td>"
+            "</tr>"
+        )
+    if not rows:
+        rows = '<tr><td colspan="5" class="empty">Нет сотрудников</td></tr>'
+
+    err = f'<div class="error">{_escape(error)}</div>' if error else ""
+    body = f"""<h1>🛡️ Сотрудники</h1>
+{err}
+<div class="card">
+<h3>Новый сотрудник</h3>
+<form method="POST" action="/admin/staff">
+<div class="form-group"><label>Логин</label><input name="username" required></div>
+<div class="form-group"><label>Пароль</label><input type="password" name="password" required></div>
+<div class="form-group"><label>Роль</label>
+<select name="role">
+<option value="operator">Оператор</option>
+<option value="admin">Администратор</option>
+</select></div>
+<button class="btn btn-primary">Создать сотрудника</button>
+</form>
+</div>
+<h2>Текущая команда</h2>
+<table><tr><th>ID</th><th>Логин</th><th>Роль</th><th>Создан</th><th>Управление</th></tr>
+{rows}</table>"""
+    return layout("Сотрудники", body, user=current_admin, active="staff")

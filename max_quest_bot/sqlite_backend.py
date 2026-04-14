@@ -115,7 +115,11 @@ class SQLiteQuestBackend:
             quest = self._map_quest(quest_row)
             if self.db.check_gift_given(user_id, int(quest_row["id"])) is not None:
                 continue
-            if self.db.check_completed_quest(user_id, int(quest_row["id"])) is not None:
+            completed_attempt = self.db.check_completed_quest(user_id, int(quest_row["id"]))
+            if (
+                completed_attempt is not None
+                and not quest.allow_retry_if_completed_without_prize
+            ):
                 continue
             quests.append(quest)
         return quests
@@ -184,7 +188,11 @@ class SQLiteQuestBackend:
 
         if self.db.check_gift_given(int(user_row["id"]), int(quest_id)) is not None:
             raise ValueError("Приз за этот квест уже выдан, повторный запуск недоступен.")
-        if self.db.check_completed_quest(int(user_row["id"]), int(quest_id)) is not None:
+        completed_attempt = self.db.check_completed_quest(int(user_row["id"]), int(quest_id))
+        if (
+            completed_attempt is not None
+            and not bool(quest_row["allow_retry_before_gift"])
+        ):
             raise ValueError("Квест уже завершён. Повторный запуск недоступен.")
 
         attempt_id = self.db.create_attempt(int(user_row["id"]), int(quest_id))
@@ -202,7 +210,12 @@ class SQLiteQuestBackend:
         if attempt_id is None:
             raise ValueError("Сейчас нет активного прохождения.")
 
-        is_correct = check_answer(answer, current.question.correct_answer)
+        is_correct = check_answer(
+            answer,
+            current.question.correct_answer,
+            semantic_mode=current.question.semantic_mode,
+            semantic_threshold=current.question.semantic_threshold,
+        )
         self.db.log_answer(attempt_id, int(current.question.id), answer, is_correct)
 
         progress = self._build_progress(attempt_id, current.question)
@@ -383,7 +396,7 @@ class SQLiteQuestBackend:
             status=QuestStatus(row["status"]),
             questions=questions,
             default_max_attempts=int(row["max_attempts"] or 0),
-            allow_retry_if_completed_without_prize=False,
+            allow_retry_if_completed_without_prize=bool(row["allow_retry_before_gift"]),
         )
 
     def _map_question(self, row: Any) -> Question:
@@ -396,7 +409,13 @@ class SQLiteQuestBackend:
             answer_variants=[row["correct_answer"] or ""],
             hint=row["hint"] or "",
             explanation=row["explanation"] or "",
-            max_attempts=row["attempts_override"],
+            semantic_mode=row["semantic_mode"] or "simple",
+            semantic_threshold=float(row["semantic_threshold"] or 0.6),
+            max_attempts=(
+                int(row["attempts_override"])
+                if row["attempts_override"] is not None
+                else None
+            ),
         )
 
     def _map_attempt(self, row: Any) -> QuestAttempt:

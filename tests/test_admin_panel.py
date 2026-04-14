@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from admin_panel.app import create_app
 from admin_panel.config import AdminPanelSettings
 from admin_panel.db import Database
+from admin_panel.security import hash_password
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -118,6 +119,117 @@ def test_admin_can_create_quest(tmp_path: Path) -> None:
 
     assert quests.status_code == 200
     assert "Тестовый квест" in quests.text
+
+
+def test_operator_cannot_manage_quests_or_staff(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+    database.create_admin("operator", hash_password("operator-pass"), "operator")
+
+    client.post(
+        "/admin/login",
+        data={"username": "operator", "password": "operator-pass"},
+    )
+
+    users_page = client.get("/admin/users")
+    assert users_page.status_code == 200
+
+    quests_page = client.get("/admin/quests")
+    assert quests_page.status_code == 200
+    assert "Создать квест" not in quests_page.text
+
+    create_form = client.get("/admin/quests/new")
+    assert create_form.status_code == 403
+
+    staff_page = client.get("/admin/staff")
+    assert staff_page.status_code == 403
+
+
+def test_admin_can_manage_staff_and_question_settings(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    create_staff = client.post(
+        "/admin/staff",
+        data={
+            "username": "quest-operator",
+            "password": "secret-pass",
+            "role": "operator",
+        },
+        follow_redirects=False,
+    )
+    assert create_staff.status_code == 303
+    assert database.get_admin_by_username("quest-operator") is not None
+
+    quest_id = database.get_published_quests()[0]["id"]
+    create_question = client.post(
+        f"/admin/quests/{quest_id}/questions",
+        data={
+            "order_num": "10",
+            "context": "Подумайте над надписью",
+            "task_text": "Какое слово видно на табличке?",
+            "correct_answer": "Парк",
+            "explanation": "Это ориентир у входа.",
+            "hint": "Табличка на объекте у входа.",
+            "semantic_mode": "contains",
+            "semantic_threshold": "0.85",
+            "attempts_override": "1",
+        },
+        follow_redirects=False,
+    )
+    assert create_question.status_code == 303
+
+    question = database.get_questions_for_quest(quest_id)[-1]
+    assert question["semantic_mode"] == "contains"
+    assert float(question["semantic_threshold"]) == 0.85
+    assert question["attempts_override"] == 1
+
+    quest_page = client.get(f"/admin/quests/{quest_id}")
+    assert quest_page.status_code == 200
+    assert "contains" in quest_page.text
+    assert "0.85" in quest_page.text
+
+
+def test_gift_issue_form_stores_datetime_comment_and_issuer(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+    user_id = database.create_user(max_user_id="9988", phone="+79991110000")
+    quest_id = database.get_published_quests()[0]["id"]
+    attempt_id = database.create_attempt(user_id, quest_id)
+    database.complete_attempt(attempt_id)
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    response = client.post(
+        f"/admin/attempts/{attempt_id}/gift",
+        data={
+            "gift_given_at": "2026-04-14T13:45",
+            "comment": "Подарок выдан на стойке регистрации",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    attempt = database.get_attempt_by_id(attempt_id)
+    assert attempt["gift_given"] == 1
+    assert attempt["gift_given_at"].startswith("2026-04-14 13:45")
+    assert attempt["comment"] == "Подарок выдан на стойке регистрации"
+
+    attempts = database.get_attempts_for_user(user_id)
+    assert attempts[0]["gift_given_by_username"] == "admin"
+
+    detail_page = client.get(f"/admin/users/{user_id}")
+    assert detail_page.status_code == 200
+    assert "Подарок выдан на стойке регистрации" in detail_page.text
+    assert "admin" in detail_page.text
 
 
 def test_admin_export_requires_auth_and_returns_csv(tmp_path: Path) -> None:
