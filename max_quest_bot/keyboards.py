@@ -6,6 +6,12 @@ from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 from max_quest_bot.models import Quest
 
 
+def start_keyboard():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.row(CallbackButton(text="Старт", payload="nav:start"))
+    return keyboard.as_markup()
+
+
 def consent_keyboard():
     keyboard = InlineKeyboardBuilder()
     keyboard.row(

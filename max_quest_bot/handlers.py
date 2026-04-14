@@ -13,6 +13,7 @@ from max_quest_bot.keyboards import (
     quest_card_keyboard,
     quests_keyboard,
     request_phone_keyboard,
+    start_keyboard,
 )
 from max_quest_bot.models import AnswerResult, CurrentQuestion, Quest, RevealResult
 
@@ -34,7 +35,8 @@ def register_handlers(
             message,
             (
                 "Чтобы участвовать в квесте, нужно согласиться на обработку данных.\n\n"
-                "Мы сохраняем ваш `max_user_id`, прогресс прохождения и, при необходимости, телефон."
+                "Мы сохраняем ваш `max_user_id`, номер телефона и прогресс прохождения.\n"
+                "После согласия бот попросит сразу поделиться телефоном по кнопке."
             ),
             attachments=[consent_keyboard()],
         )
@@ -43,8 +45,8 @@ def register_handlers(
         await send_message(
             message,
             (
-                "Для связи и выдачи подарка можно оставить телефон.\n"
-                "Если пока не хотите, этот шаг можно пропустить."
+                "Для регистрации нужно поделиться номером телефона.\n"
+                "Нажмите кнопку ниже, чтобы отправить контакт и продолжить."
             ),
             attachments=[request_phone_keyboard(allow_skip=not settings.require_phone)],
         )
@@ -212,7 +214,11 @@ def register_handlers(
     async def on_bot_started(event: BotStarted) -> None:
         await event.bot.send_message(
             chat_id=event.chat_id,
-            text="Привет. Нажмите /start, чтобы начать квест.",
+            text=(
+                "Привет! Это бот квеста.\n"
+                "Нажмите кнопку «Старт», чтобы начать регистрацию и прохождение."
+            ),
+            attachments=[start_keyboard()],
         )
 
     @dp.message_created(Command(["start", "menu"]))
@@ -314,6 +320,18 @@ def register_handlers(
             await event.answer()
             if message is not None:
                 await show_help(message)
+            return
+
+        if payload == "nav:start":
+            await backend.ensure_user(
+                max_user_id=user_id,
+                first_name=event.callback.user.first_name or "",
+                last_name=event.callback.user.last_name or "",
+                username=event.callback.user.username or "",
+            )
+            await event.answer()
+            if message is not None:
+                await route_user(message, user_id)
             return
 
         if payload == "nav:quests":

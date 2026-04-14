@@ -21,7 +21,7 @@ class Settings:
     webhook_path: str = "/webhook"
     webhook_secret: str | None = None
     log_level: str = "INFO"
-    require_phone: bool = False
+    require_phone: bool = True
     backend_mode: str = "sqlite"
     db_path: str = ".local/admin_panel.sqlite3"
 
@@ -36,7 +36,7 @@ class Settings:
             webhook_path=os.getenv("BOT_WEBHOOK_PATH", "/webhook").strip(),
             webhook_secret=os.getenv("BOT_WEBHOOK_SECRET") or None,
             log_level=os.getenv("BOT_LOG_LEVEL", "INFO").strip().upper(),
-            require_phone=_as_bool(os.getenv("BOT_REQUIRE_PHONE"), False),
+            require_phone=_as_bool(os.getenv("BOT_REQUIRE_PHONE"), True),
             backend_mode=os.getenv("BOT_BACKEND", "sqlite").strip().lower(),
             db_path=(
                 os.getenv("BOT_DB_PATH")
