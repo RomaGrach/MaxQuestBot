@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class QuestStatus(StrEnum):
@@ -24,7 +28,7 @@ class BotUser:
     username: str = ""
     phone: str | None = None
     consent_given: bool = False
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now)
 
 
 @dataclass(slots=True)
@@ -67,7 +71,7 @@ class QuestAttempt:
     quest_id: str
     status: AttemptStatus = AttemptStatus.IN_PROGRESS
     current_question_index: int = 0
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=utc_now)
     completed_at: datetime | None = None
     prize_given: bool = False
     question_progress: dict[str, QuestionProgress] = field(default_factory=dict)
@@ -107,4 +111,3 @@ class RevealResult:
     progress: QuestionProgress
     next_question: Question | None = None
     quest_completed: bool = False
-

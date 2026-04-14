@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from max_quest_bot.models import (
@@ -262,7 +262,7 @@ class InMemoryQuestBackend:
         attempt.current_question_index += 1
         if attempt.current_question_index >= len(current.quest.questions):
             attempt.status = AttemptStatus.COMPLETED
-            attempt.completed_at = datetime.utcnow()
+            attempt.completed_at = datetime.now(UTC)
             self._active_attempts.pop(attempt.user_id, None)
             if outcome in {"correct", "attempts_exhausted"}:
                 return AnswerResult(
