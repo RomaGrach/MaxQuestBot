@@ -69,6 +69,27 @@ def test_dashboard_shows_authorized_users_table(tmp_path: Path) -> None:
     assert "Дата регистрации" in dashboard.text
 
 
+def test_users_list_shows_completed_quests_count(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    client.get("/admin/login")
+    database = Database(str(tmp_path / "admin.sqlite3"))
+    user_id = database.create_user(max_user_id="777001", phone="+79991112233")
+    quest_id = database.get_published_quests()[0]["id"]
+    attempt_id = database.create_attempt(user_id, quest_id)
+    database.complete_attempt(attempt_id)
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+    users_page = client.get("/admin/users")
+
+    assert users_page.status_code == 200
+    assert "Квестов пройдено" in users_page.text
+    assert "777001" in users_page.text
+    assert ">1</td>" in users_page.text
+
+
 def test_admin_can_create_quest(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     client.post(

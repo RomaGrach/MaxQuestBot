@@ -253,7 +253,15 @@ class Database:
 
     def get_all_users(self):
         return self.conn.execute(
-            "SELECT * FROM users ORDER BY registered_at DESC"
+            """
+            SELECT
+                u.*,
+                COUNT(DISTINCT CASE WHEN qa.status = 'completed' THEN qa.quest_id END) AS completed_quests_count
+            FROM users u
+            LEFT JOIN quest_attempts qa ON qa.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.registered_at DESC
+            """
         ).fetchall()
 
     def get_user_by_id(self, user_id: int):

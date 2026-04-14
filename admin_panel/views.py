@@ -113,14 +113,15 @@ def _users_table(users):
             f"<td>{uid}</td>"
             f"<td><a href='/admin/users/{uid}'>{_escape(u['max_user_id'])}</a></td>"
             f"<td>{_escape(u['phone'] or '—')}</td>"
+            f"<td>{int(u['completed_quests_count'] or 0)}</td>"
             f"<td>{consent}</td>"
             f"<td>{_escape(u['registered_at'] or '')}</td>"
             f"</tr>"
         )
     if not rows:
-        rows = '<tr><td colspan="5" class="empty">Нет пользователей</td></tr>'
+        rows = '<tr><td colspan="6" class="empty">Нет пользователей</td></tr>'
     return (
-        "<table><tr><th>ID</th><th>MAX ID</th><th>Телефон</th><th>Согласие</th><th>Дата регистрации</th></tr>"
+        "<table><tr><th>ID</th><th>MAX ID</th><th>Телефон</th><th>Квестов пройдено</th><th>Согласие</th><th>Дата регистрации</th></tr>"
         f"{rows}</table>"
     )
 
