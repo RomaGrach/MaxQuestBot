@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from admin_panel.app import create_app
 from admin_panel.config import AdminPanelSettings
+from admin_panel.db import Database
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -45,6 +46,27 @@ def test_admin_login_and_dashboard(tmp_path: Path) -> None:
     assert dashboard.status_code == 200
     assert "Dashboard" in dashboard.text
     assert "Пользователей" in dashboard.text
+    assert "Авторизованные пользователи" in dashboard.text
+
+
+def test_dashboard_shows_authorized_users_table(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    client.get("/admin/login")
+    database = Database(str(tmp_path / "admin.sqlite3"))
+    database.create_user(max_user_id="166591735", phone="+79990000000")
+    database.update_user_consent("166591735")
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    dashboard = client.get("/admin/dashboard")
+
+    assert dashboard.status_code == 200
+    assert "166591735" in dashboard.text
+    assert "+79990000000" in dashboard.text
+    assert "Дата регистрации" in dashboard.text
 
 
 def test_admin_can_create_quest(tmp_path: Path) -> None:

@@ -149,7 +149,10 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
-        return render_html(views.dashboard(get_db().get_stats()), user=admin)
+        return render_html(
+            views.dashboard(get_db().get_stats(), get_db().get_all_users()),
+            user=admin,
+        )
 
     @app.get("/admin/users", response_class=HTMLResponse)
     async def admin_users(request: Request):

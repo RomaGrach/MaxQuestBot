@@ -103,23 +103,7 @@ def login_page(error=""):
     return layout("Вход", body)
 
 
-def dashboard(stats):
-    cards = ""
-    items = [
-        (stats["total_users"], "Пользователей"),
-        (stats["total_quests"], "Квестов"),
-        (stats["published_quests"], "Опубликованных"),
-        (stats["active_attempts"], "Активных прохождений"),
-        (stats["completed_attempts"], "Завершённых"),
-        (stats["gifts_given"], "Подарков выдано"),
-    ]
-    for num, label in items:
-        cards += f'<div class="stat-card"><div class="num">{num}</div><div class="label">{label}</div></div>'
-    body = f"<h1>📊 Dashboard</h1><div class='stats-grid'>{cards}</div>"
-    return layout("Dashboard", body, active="dashboard")
-
-
-def users_list(users):
+def _users_table(users):
     rows = ""
     for u in users:
         uid = u["id"]
@@ -135,9 +119,39 @@ def users_list(users):
         )
     if not rows:
         rows = '<tr><td colspan="5" class="empty">Нет пользователей</td></tr>'
+    return (
+        "<table><tr><th>ID</th><th>MAX ID</th><th>Телефон</th><th>Согласие</th><th>Дата регистрации</th></tr>"
+        f"{rows}</table>"
+    )
+
+
+def dashboard(stats, users):
+    cards = ""
+    items = [
+        (stats["total_users"], "Пользователей"),
+        (stats["total_quests"], "Квестов"),
+        (stats["published_quests"], "Опубликованных"),
+        (stats["active_attempts"], "Активных прохождений"),
+        (stats["completed_attempts"], "Завершённых"),
+        (stats["gifts_given"], "Подарков выдано"),
+    ]
+    for num, label in items:
+        cards += f'<div class="stat-card"><div class="num">{num}</div><div class="label">{label}</div></div>'
+    users_table = _users_table(users)
+    body = (
+        f"<h1>📊 Dashboard</h1>"
+        f"<div class='stats-grid'>{cards}</div>"
+        f"<div class='card'>"
+        f"<h2>👥 Авторизованные пользователи</h2>"
+        f"{users_table}"
+        f"</div>"
+    )
+    return layout("Dashboard", body, active="dashboard")
+
+
+def users_list(users):
     body = f"""<h1>👥 Пользователи</h1>
-<table><tr><th>ID</th><th>MAX ID</th><th>Телефон</th><th>Согласие</th><th>Дата регистрации</th></tr>
-{rows}</table>"""
+{_users_table(users)}"""
     return layout("Пользователи", body, active="users")
 
 
