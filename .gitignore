@@ -3,4 +3,6 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+.env.local
+.local/
 *.egg-info/
