@@ -18,6 +18,24 @@ from max_quest_bot.keyboards import (
 from max_quest_bot.models import AnswerResult, CurrentQuestion, Quest, RevealResult
 
 
+def extract_phone_from_message(message: Message) -> str | None:
+    body = message.body
+    if body is None or not body.attachments:
+        return None
+
+    for attachment in body.attachments:
+        if getattr(attachment, "type", None) != "contact":
+            continue
+        payload = getattr(attachment, "payload", None)
+        if payload is None:
+            continue
+        vcf = getattr(payload, "vcf", None)
+        phone = getattr(vcf, "phone", None)
+        if phone:
+            return str(phone).strip()
+    return None
+
+
 def register_handlers(
     dp: Dispatcher,
     settings: Settings,
@@ -49,6 +67,18 @@ def register_handlers(
                 "Нажмите кнопку ниже, чтобы отправить контакт и продолжить."
             ),
             attachments=[request_phone_keyboard(allow_skip=not settings.require_phone)],
+        )
+
+    async def show_registration_complete(message: Message) -> None:
+        await send_message(
+            message,
+            (
+                "Регистрация завершена.\n"
+                "Это бот с городскими квестами: здесь можно выбрать квест, получить вопросы, "
+                "запрашивать подсказки и пройти маршрут до конца.\n"
+                "Ниже покажу доступные квесты."
+            ),
+            attachments=[help_keyboard()],
         )
 
     async def show_help(message: Message) -> None:
@@ -237,11 +267,9 @@ def register_handlers(
         await show_help(event.message)
 
     @dp.message_created(Contact())
-    async def contact_message(event: MessageCreated, contact) -> None:
+    async def contact_message(event: MessageCreated) -> None:
         sender = event.message.sender
-        phone = None
-        if contact.payload is not None:
-            phone = contact.payload.vcf.phone
+        phone = extract_phone_from_message(event.message)
         if not phone:
             await send_message(
                 event.message,
@@ -258,6 +286,7 @@ def register_handlers(
         )
         await backend.set_phone(sender.user_id, phone)
         await send_message(event.message, f"Телефон сохранён: {phone}")
+        await show_registration_complete(event.message)
         await route_user(event.message, sender.user_id)
 
     @dp.message_created(F.message.body.text)
