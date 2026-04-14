@@ -57,5 +57,9 @@ def active_question_keyboard():
 
 def help_keyboard():
     keyboard = InlineKeyboardBuilder()
-    keyboard.row(CallbackButton(text="Квесты", payload="nav:quests"))
+    keyboard.row(
+        CallbackButton(text="Квесты", payload="nav:quests"),
+        CallbackButton(text="Статус", payload="nav:status"),
+    )
+    keyboard.row(CallbackButton(text="Инфо", payload="nav:info"))
     return keyboard.as_markup()

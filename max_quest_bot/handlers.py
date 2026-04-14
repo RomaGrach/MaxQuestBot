@@ -88,8 +88,23 @@ def register_handlers(
                 "Команды:\n"
                 "/start — начать или продолжить сценарий\n"
                 "/menu — открыть меню\n"
+                "/quests — показать доступные квесты\n"
+                "/status — показать ваш статус\n"
+                "/info — краткая информация о боте\n"
                 "/help — краткая справка\n\n"
                 "Во время вопроса можно отправить текстовый ответ, запросить подсказку или сдаться."
+            ),
+            attachments=[help_keyboard()],
+        )
+
+    async def show_info(message: Message) -> None:
+        await send_message(
+            message,
+            (
+                "Это бот городских квестов.\n"
+                "Здесь можно зарегистрироваться, выбрать доступный квест, отвечать на вопросы, "
+                "брать подсказки и отслеживать свой прогресс.\n\n"
+                "Для быстрого доступа используйте кнопки ниже или меню команд бота."
             ),
             attachments=[help_keyboard()],
         )
@@ -124,6 +139,48 @@ def register_handlers(
             message,
             "\n".join(lines),
             attachments=[quests_keyboard(quests)],
+        )
+
+    async def show_status(message: Message, max_user_id: int) -> None:
+        user = await backend.get_user(max_user_id)
+        if user is None:
+            await send_message(
+                message,
+                (
+                    "Регистрация ещё не начата.\n"
+                    "Нажмите «Старт» или используйте /start, чтобы начать."
+                ),
+                attachments=[start_keyboard()],
+            )
+            return
+
+        parts = [
+            "Ваш статус:",
+            f"MAX ID: {user.max_user_id}",
+            f"Согласие: {'да' if user.consent_given else 'нет'}",
+            f"Телефон: {user.phone or 'не указан'}",
+        ]
+
+        active_attempt = await backend.get_active_attempt(max_user_id)
+        if active_attempt is None:
+            quests = await backend.list_available_quests(max_user_id)
+            parts.append("Активный квест: нет")
+            parts.append(f"Доступно квестов: {len(quests)}")
+        else:
+            quest = await backend.get_quest(active_attempt.quest_id)
+            current = await backend.get_current_question(max_user_id)
+            parts.append(f"Активный квест: {quest.title if quest else active_attempt.quest_id}")
+            if current is None:
+                parts.append("Текущий вопрос: не найден")
+            else:
+                parts.append(
+                    f"Текущий вопрос: {current.question.order}/{len(current.quest.questions)}"
+                )
+
+        await send_message(
+            message,
+            "\n".join(parts),
+            attachments=[help_keyboard()],
         )
 
     async def show_quest_card(message: Message, quest: Quest) -> None:
@@ -246,12 +303,13 @@ def register_handlers(
             chat_id=event.chat_id,
             text=(
                 "Привет! Это бот квеста.\n"
-                "Нажмите кнопку «Старт», чтобы начать регистрацию и прохождение."
+                "Нажмите кнопку «Старт», чтобы начать регистрацию и прохождение.\n"
+                "Потом можно пользоваться командами /quests, /status и /info."
             ),
             attachments=[start_keyboard()],
         )
 
-    @dp.message_created(Command(["start", "menu"]))
+    @dp.message_created(Command(["start", "menu", "quests"]))
     async def start_command(event: MessageCreated) -> None:
         sender = event.message.sender
         await backend.ensure_user(
@@ -265,6 +323,14 @@ def register_handlers(
     @dp.message_created(Command("help"))
     async def help_command(event: MessageCreated) -> None:
         await show_help(event.message)
+
+    @dp.message_created(Command("info"))
+    async def info_command(event: MessageCreated) -> None:
+        await show_info(event.message)
+
+    @dp.message_created(Command("status"))
+    async def status_command(event: MessageCreated) -> None:
+        await show_status(event.message, event.message.sender.user_id)
 
     @dp.message_created(Contact())
     async def contact_message(event: MessageCreated) -> None:
@@ -349,6 +415,18 @@ def register_handlers(
             await event.answer()
             if message is not None:
                 await show_help(message)
+            return
+
+        if payload == "nav:info":
+            await event.answer()
+            if message is not None:
+                await show_info(message)
+            return
+
+        if payload == "nav:status":
+            await event.answer()
+            if message is not None:
+                await show_status(message, user_id)
             return
 
         if payload == "nav:start":
