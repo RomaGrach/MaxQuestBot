@@ -8,12 +8,18 @@ from maxapi.webhook.fastapi import FastAPIMaxWebhook
 from max_quest_bot.backend import InMemoryQuestBackend
 from max_quest_bot.config import Settings
 from max_quest_bot.handlers import register_handlers
+from max_quest_bot.sqlite_backend import SQLiteQuestBackend, SqliteBackendSettings
 
 
 def create_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     bot = Bot(token=settings.max_bot_token)
     dp = Dispatcher()
-    backend = InMemoryQuestBackend()
+    if settings.backend_mode == "memory":
+        backend = InMemoryQuestBackend()
+    else:
+        backend = SQLiteQuestBackend(
+            SqliteBackendSettings(db_path=settings.db_path)
+        )
     register_handlers(dp=dp, settings=settings, backend=backend)
     return bot, dp
 
@@ -39,4 +45,3 @@ async def run_bot() -> None:
         port=settings.port,
         path=settings.webhook_path,
     )
-

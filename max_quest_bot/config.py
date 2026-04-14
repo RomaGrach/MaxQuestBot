@@ -22,6 +22,8 @@ class Settings:
     webhook_secret: str | None = None
     log_level: str = "INFO"
     require_phone: bool = False
+    backend_mode: str = "sqlite"
+    db_path: str = ".local/admin_panel.sqlite3"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,6 +37,12 @@ class Settings:
             webhook_secret=os.getenv("BOT_WEBHOOK_SECRET") or None,
             log_level=os.getenv("BOT_LOG_LEVEL", "INFO").strip().upper(),
             require_phone=_as_bool(os.getenv("BOT_REQUIRE_PHONE"), False),
+            backend_mode=os.getenv("BOT_BACKEND", "sqlite").strip().lower(),
+            db_path=(
+                os.getenv("BOT_DB_PATH")
+                or os.getenv("ADMIN_PANEL_DB_PATH")
+                or ".local/admin_panel.sqlite3"
+            ).strip(),
         )
 
     def validate(self) -> None:
@@ -44,6 +52,7 @@ class Settings:
             )
         if self.run_mode not in {"polling", "webhook"}:
             raise ValueError("BOT_RUN_MODE must be either 'polling' or 'webhook'.")
+        if self.backend_mode not in {"sqlite", "memory"}:
+            raise ValueError("BOT_BACKEND must be either 'sqlite' or 'memory'.")
         if not self.webhook_path.startswith("/"):
             raise ValueError("BOT_WEBHOOK_PATH must start with '/'.")
-
