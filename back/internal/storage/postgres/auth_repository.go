@@ -15,44 +15,60 @@ func NewAuthRepository(db *DB) *AuthRepository {
 	return &AuthRepository{db: db}
 }
 
-func (r *AuthRepository) GetByID(_ context.Context, id int64) (auth.Admin, error) {
-	r.db.mu.RLock()
-	defer r.db.mu.RUnlock()
-
-	admin, ok := r.db.admins[id]
-	if !ok {
-		return auth.Admin{}, common.ErrNotFound
+func (r *AuthRepository) GetByID(ctx context.Context, id int64) (auth.Admin, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			SELECT id, username, password_hash, role
+			FROM admins
+			WHERE id = $1
+		`, id)
+	admin, err := scanAdmin(row)
+	if err != nil {
+		return auth.Admin{}, mapSQLError(err)
 	}
 	return admin, nil
 }
 
-func (r *AuthRepository) GetByUsername(_ context.Context, username string) (auth.Admin, error) {
-	r.db.mu.RLock()
-	defer r.db.mu.RUnlock()
-
-	id, ok := r.db.adminByLogin[username]
-	if !ok {
-		return auth.Admin{}, common.ErrNotFound
-	}
-	admin, ok := r.db.admins[id]
-	if !ok {
-		return auth.Admin{}, common.ErrNotFound
+func (r *AuthRepository) GetByUsername(ctx context.Context, username string) (auth.Admin, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			SELECT id, username, password_hash, role
+			FROM admins
+			WHERE username = $1
+		`, username)
+	admin, err := scanAdmin(row)
+	if err != nil {
+		return auth.Admin{}, mapSQLError(err)
 	}
 	return admin, nil
 }
 
-func (r *AuthRepository) Upsert(_ context.Context, admin auth.Admin) (auth.Admin, error) {
-	r.db.mu.Lock()
-	defer r.db.mu.Unlock()
+func (r *AuthRepository) Upsert(ctx context.Context, admin auth.Admin) (auth.Admin, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			INSERT INTO admins (username, password_hash, role)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (username) DO UPDATE
+			SET password_hash = EXCLUDED.password_hash,
+				role = EXCLUDED.role
+			RETURNING id, username, password_hash, role
+		`, admin.Username, admin.PasswordHash, string(admin.Role))
+	return scanAdmin(row)
+}
 
-	if existingID, ok := r.db.adminByLogin[admin.Username]; ok {
-		admin.ID = existingID
-		r.db.admins[existingID] = admin
-		return admin, nil
+type adminScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanAdmin(row adminScanner) (auth.Admin, error) {
+	var admin auth.Admin
+	var role string
+	err := row.Scan(
+		&admin.ID,
+		&admin.Username,
+		&admin.PasswordHash,
+		&role,
+	)
+	if err != nil {
+		return auth.Admin{}, err
 	}
-	r.db.nextAdminID++
-	admin.ID = r.db.nextAdminID
-	r.db.admins[admin.ID] = admin
-	r.db.adminByLogin[admin.Username] = admin.ID
+	admin.Role = common.Role(role)
 	return admin, nil
 }

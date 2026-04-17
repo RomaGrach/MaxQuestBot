@@ -9,6 +9,372 @@
   },
   "item": [
     {
+      "name": "Admin create quest",
+      "item": [
+        {
+          "name": "Login admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();\r",
+                  "\r",
+                  "pm.test(\"login status is 200\", function () {\r",
+                  "    pm.response.to.have.status(200);\r",
+                  "});\r",
+                  "\r",
+                  "if (res.token) {\r",
+                  "    pm.environment.set(\"admin_token\", res.token);\r",
+                  "} else if (res.access_token) {\r",
+                  "    pm.environment.set(\"admin_token\", res.access_token);\r",
+                  "} else {\r",
+                  "    console.log(\"Token not found in response:\", res);\r",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"username\": \"{{admin_login}}\",\r\n  \"password\": \"{{admin_password}}\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Quest 1",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"title\": \"Квест по парку\",\r\n  \"description\": \"Минимальный квест-прогулка из 3 вопросов.\",\r\n  \"status\": \"published\",\r\n  \"start_point\": \"Центральный вход в парк\",\r\n  \"prize_info\": \"Получите подарок у стойки организаторов с 10:00 до 20:00.\",\r\n  \"default_max_attempts\": 3,\r\n  \"allow_retry_before_gift\": false\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 1",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 1,\r\n  \"context\": \"В одном из уральских сказов есть образ Огневушки.\",\r\n  \"task\": \"Найдите памятник и отправьте слово с таблички.\",\r\n  \"correct_answer\": \"Огневушка\",\r\n  \"explanation\": \"Огневушка-поскакушка в сказах Бажова считается знаком месторождения золота.\",\r\n  \"hint\": \"Ищите памятник девочке с длинной косой.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/1/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "1",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 1/2",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 2,\r\n  \"context\": \"Следующая точка связана с историей основания города.\",\r\n  \"task\": \"Прочитайте слово на памятной табличке и отправьте его.\",\r\n  \"correct_answer\": \"Основание\",\r\n  \"explanation\": \"Этот объект посвящен первым строителям города.\",\r\n  \"hint\": \"Поищите рядом с основной аллеей.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/1/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "1",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 1/3",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 3,\r\n  \"context\": \"Финальная точка у старого фонтана.\",\r\n  \"task\": \"Как называется фонтан?\",\r\n  \"correct_answer\": \"Дружба\",\r\n  \"explanation\": \"Фонтан «Дружба» считается символом парка.\",\r\n  \"hint\": \"Название из одного слова на фронтальной табличке.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/1/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "1",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Quest 2",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"title\": \"Тестовый квест по скверу\",\r\n  \"description\": \"Небольшой тестовый квест из трёх вопросов для проверки API и админки.\",\r\n  \"status\": \"published\",\r\n  \"start_point\": \"Начните от главной арки у входа в сквер.\",\r\n  \"prize_info\": \"Тестовый приз можно получить у организатора после завершения квеста.\",\r\n  \"default_max_attempts\": 3,\r\n  \"allow_retry_before_gift\": false\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 2",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 1,\r\n  \"context\": \"Первый объект находится рядом с центральной аллеей.\",\r\n  \"task\": \"Найдите стенд с планом сквера и отправьте первое слово из заголовка.\",\r\n  \"correct_answer\": \"Сквер\",\r\n  \"explanation\": \"На информационном стенде указано официальное название территории.\",\r\n  \"hint\": \"Ищите карту рядом со входом.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/2/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "2",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 2/2",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 2,\r\n  \"context\": \"Следующая точка посвящена известному деятелю.\",\r\n  \"task\": \"Подойдите к памятнику и отправьте фамилию, указанную на постаменте.\",\r\n  \"correct_answer\": \"Бажов\",\r\n  \"explanation\": \"Этот памятник посвящён Павлу Петровичу Бажову.\",\r\n  \"hint\": \"Памятник расположен недалеко от скамейки и клумбы.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/2/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "2",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create questions for quest 2/3",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"order\": 3,\r\n  \"context\": \"Последний вопрос связан с декоративным объектом в центре сквера.\",\r\n  \"task\": \"Найдите фонарь с памятной табличкой и отправьте последнее слово на ней.\",\r\n  \"correct_answer\": \"Свет\",\r\n  \"explanation\": \"Этот объект установлен как символ обновления сквера.\",\r\n  \"hint\": \"Ищите фонарь в центральной части площадки.\",\r\n  \"semantic_mode\": \"\",\r\n  \"semantic_threshold\": 0,\r\n  \"max_attempts\": 3\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/quests/2/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "quests",
+                "2",
+                "questions"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "User",
       "item": [
         {
@@ -536,34 +902,6 @@
       "name": "Admin",
       "item": [
         {
-          "name": "Login admin",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n  \"username\": \"{{admin_login}}\",\r\n  \"password\": \"{{admin_password}}\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{base_url}}/admin/auth/login",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "admin",
-                "auth",
-                "login"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
           "name": "Get quests admin",
           "request": {
             "auth": {
@@ -917,8 +1255,7 @@
     },
     {
       "key": "admin_token",
-      "value": "",
-      "type": "default"
+      "value": ""
     }
   ]
 }

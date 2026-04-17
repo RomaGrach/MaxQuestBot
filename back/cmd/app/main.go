@@ -10,7 +10,15 @@ import (
 func main() {
 	cfg := config.MustLoad()
 
-	application := app.New(cfg)
+	application, err := app.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := application.Close(); err != nil {
+			log.Println("close app:", err)
+		}
+	}()
 
 	if err := application.Run(); err != nil {
 		log.Fatal(err)

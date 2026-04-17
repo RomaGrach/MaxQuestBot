@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	Port string
-	Auth AuthConfig
-	Max  MaxConfig
+	Port        string
+	DatabaseURL string
+	Auth        AuthConfig
+	Max         MaxConfig
 }
 
 type AuthConfig struct {
@@ -37,7 +38,8 @@ func MustLoad() Config {
 	}
 
 	return Config{
-		Port: port,
+		Port:        port,
+		DatabaseURL: os.Getenv("DATABASE_URL"),
 		Auth: AuthConfig{
 			TokenSecret:      getEnv("AUTH_TOKEN_SECRET", "dev-secret"),
 			TokenTTL:         tokenTTL,

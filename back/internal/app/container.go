@@ -1,8 +1,9 @@
 package app
 
 import (
+	"context"
+	"io"
 	"log/slog"
-	"time"
 
 	"github.com/RomaGrach/quest-bot-backend/internal/config"
 	"github.com/RomaGrach/quest-bot-backend/internal/domain/auth"
@@ -21,6 +22,7 @@ import (
 type Container struct {
 	Logger       *slog.Logger
 	TokenManager *security.TokenManager
+	Closer       io.Closer
 
 	AdminAuthHandler     *adminhandlers.AuthHandler
 	AdminQuestHandler    *adminhandlers.QuestHandler
@@ -35,12 +37,15 @@ type Container struct {
 	BotWebhookHandler      *bothandlers.WebhookHandler
 }
 
-func NewContainer(cfg config.Config) *Container {
+func NewContainer(ctx context.Context, cfg config.Config) (*Container, error) {
 	logger := observability.NewLogger(slog.LevelInfo)
 	hasher := security.NewSHA256Hasher(cfg.Auth.PasswordSalt)
 	tokenManager := security.NewTokenManager(cfg.Auth.TokenSecret, cfg.Auth.TokenTTL)
 
-	db := postgres.NewInMemoryDB(time.Now())
+	db, err := postgres.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
 
 	questRepo := postgres.NewQuestRepository(db)
 	questionRepo := postgres.NewQuestionRepository(db)
@@ -48,13 +53,14 @@ func NewContainer(cfg config.Config) *Container {
 	attemptRepo := postgres.NewAttemptRepository(db)
 	authRepo := postgres.NewAuthRepository(db)
 
-	db.SeedAdmin(auth.Admin{
+	_, _ = authRepo.Upsert(ctx, auth.Admin{
 		Username:     cfg.Auth.AdminUsername,
 		PasswordHash: hasher.Hash(cfg.Auth.AdminPassword),
 		Role:         common.RoleAdmin,
 	})
+
 	if cfg.Auth.OperatorUsername != "" {
-		db.SeedAdmin(auth.Admin{
+		_, _ = authRepo.Upsert(ctx, auth.Admin{
 			Username:     cfg.Auth.OperatorUsername,
 			PasswordHash: hasher.Hash(cfg.Auth.OperatorPassword),
 			Role:         common.RoleOperator,
@@ -80,6 +86,7 @@ func NewContainer(cfg config.Config) *Container {
 	return &Container{
 		Logger:       logger,
 		TokenManager: tokenManager,
+		Closer:       db,
 
 		AdminAuthHandler:     adminhandlers.NewAuthHandler(adminAuthUC),
 		AdminQuestHandler:    adminhandlers.NewQuestHandler(adminQuestUC),
@@ -92,5 +99,5 @@ func NewContainer(cfg config.Config) *Container {
 		BotQuestHandler:        bothandlers.NewQuestHandler(botQuestListUC, botStartQuestUC, botStateUC),
 		BotAnswerHandler:       bothandlers.NewAnswerHandler(botAnswerUC, botHintUC),
 		BotWebhookHandler:      bothandlers.NewWebhookHandler(maxtransport.NewSigner(cfg.Max.WebhookSecret)),
-	}
+	}, nil
 }

@@ -2,8 +2,8 @@ package postgres
 
 import (
 	"context"
-	"sort"
-	"time"
+	"database/sql"
+	"errors"
 
 	"github.com/RomaGrach/quest-bot-backend/internal/domain/common"
 	"github.com/RomaGrach/quest-bot-backend/internal/domain/user"
@@ -17,85 +17,126 @@ func NewUserRepository(db *DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) List(_ context.Context) ([]user.User, error) {
-	r.db.mu.RLock()
-	defer r.db.mu.RUnlock()
-
-	out := make([]user.User, 0, len(r.db.users))
-	for _, u := range r.db.users {
-		out = append(out, u)
+func (r *UserRepository) List(ctx context.Context) ([]user.User, error) {
+	rows, err := r.db.sql.QueryContext(ctx, `
+			SELECT id, max_user_id, phone, consent, comment, registered_at
+			FROM users
+			ORDER BY id
+		`)
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, nil
+	defer rows.Close()
+
+	items := make([]user.User, 0)
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, u)
+	}
+	return items, rows.Err()
 }
 
-func (r *UserRepository) GetByID(_ context.Context, id int64) (user.User, error) {
-	r.db.mu.RLock()
-	defer r.db.mu.RUnlock()
-
-	u, ok := r.db.users[id]
-	if !ok {
-		return user.User{}, common.ErrNotFound
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (user.User, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			SELECT id, max_user_id, phone, consent, comment, registered_at
+			FROM users
+			WHERE id = $1
+		`, id)
+	u, err := scanUser(row)
+	if err != nil {
+		return user.User{}, mapSQLError(err)
 	}
 	return u, nil
 }
 
-func (r *UserRepository) GetByMaxUserID(_ context.Context, maxUserID string) (user.User, error) {
-	r.db.mu.RLock()
-	defer r.db.mu.RUnlock()
-
-	id, ok := r.db.usersByMaxID[maxUserID]
-	if !ok {
-		return user.User{}, common.ErrNotFound
-	}
-	u, ok := r.db.users[id]
-	if !ok {
-		return user.User{}, common.ErrNotFound
+func (r *UserRepository) GetByMaxUserID(ctx context.Context, maxUserID string) (user.User, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			SELECT id, max_user_id, phone, consent, comment, registered_at
+			FROM users
+			WHERE max_user_id = $1
+		`, maxUserID)
+	u, err := scanUser(row)
+	if err != nil {
+		return user.User{}, mapSQLError(err)
 	}
 	return u, nil
 }
 
-func (r *UserRepository) Create(_ context.Context, u user.User) (user.User, error) {
-	r.db.mu.Lock()
-	defer r.db.mu.Unlock()
+func (r *UserRepository) Create(ctx context.Context, u user.User) (user.User, error) {
+	if !u.RegisteredAt.IsZero() {
+		row := r.db.sql.QueryRowContext(ctx, `
+				INSERT INTO users (max_user_id, phone, consent, comment, registered_at)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (max_user_id) DO NOTHING
+				RETURNING id, max_user_id, phone, consent, comment, registered_at
+			`, u.MaxUserID, u.Phone, u.Consent, u.Comment, u.RegisteredAt)
+		created, err := scanUser(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return user.User{}, common.ErrConflict
+		}
+		return created, err
+	}
 
-	if _, exists := r.db.usersByMaxID[u.MaxUserID]; exists {
+	row := r.db.sql.QueryRowContext(ctx, `
+			INSERT INTO users (max_user_id, phone, consent, comment)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (max_user_id) DO NOTHING
+			RETURNING id, max_user_id, phone, consent, comment, registered_at
+		`, u.MaxUserID, u.Phone, u.Consent, u.Comment)
+	created, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return user.User{}, common.ErrConflict
 	}
-	r.db.nextUserID++
-	u.ID = r.db.nextUserID
-	if u.RegisteredAt.IsZero() {
-		u.RegisteredAt = time.Now()
-	}
-	r.db.users[u.ID] = u
-	r.db.usersByMaxID[u.MaxUserID] = u.ID
-	return u, nil
+	return created, err
 }
 
-func (r *UserRepository) Update(_ context.Context, u user.User) (user.User, error) {
-	r.db.mu.Lock()
-	defer r.db.mu.Unlock()
-
-	existing, ok := r.db.users[u.ID]
-	if !ok {
-		return user.User{}, common.ErrNotFound
+func (r *UserRepository) Update(ctx context.Context, u user.User) (user.User, error) {
+	row := r.db.sql.QueryRowContext(ctx, `
+			UPDATE users
+			SET max_user_id = $2, phone = $3, consent = $4, comment = $5
+			WHERE id = $1
+			RETURNING id, max_user_id, phone, consent, comment, registered_at
+		`, u.ID, u.MaxUserID, u.Phone, u.Consent, u.Comment)
+	updated, err := scanUser(row)
+	if err != nil {
+		return user.User{}, mapSQLError(err)
 	}
-	if existing.MaxUserID != u.MaxUserID {
-		delete(r.db.usersByMaxID, existing.MaxUserID)
-		r.db.usersByMaxID[u.MaxUserID] = u.ID
-	}
-	if u.RegisteredAt.IsZero() {
-		u.RegisteredAt = existing.RegisteredAt
-	}
-	r.db.users[u.ID] = u
-	return u, nil
+	return updated, nil
 }
 
 func (r *UserRepository) UpdateComment(ctx context.Context, id int64, comment string) (user.User, error) {
-	u, err := r.GetByID(ctx, id)
+	row := r.db.sql.QueryRowContext(ctx, `
+			UPDATE users
+			SET comment = $2
+			WHERE id = $1
+			RETURNING id, max_user_id, phone, consent, comment, registered_at
+		`, id, comment)
+	updated, err := scanUser(row)
+	if err != nil {
+		return user.User{}, mapSQLError(err)
+	}
+	return updated, nil
+}
+
+type userScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanUser(row userScanner) (user.User, error) {
+	var u user.User
+	err := row.Scan(
+		&u.ID,
+		&u.MaxUserID,
+		&u.Phone,
+		&u.Consent,
+		&u.Comment,
+		&u.RegisteredAt,
+	)
 	if err != nil {
 		return user.User{}, err
 	}
-	u.Comment = comment
-	return r.Update(ctx, u)
+	return u, nil
 }

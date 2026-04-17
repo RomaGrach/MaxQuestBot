@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: quest-bot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: questbot
+      POSTGRES_USER: questbot
+      POSTGRES_PASSWORD: questbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/000001_init.up.sql:/docker-entrypoint-initdb.d/000001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U questbot -d questbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quest-bot-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://questbot:questbot@db:5432/questbot?sslmode=disable
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
