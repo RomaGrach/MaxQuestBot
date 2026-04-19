@@ -121,6 +121,101 @@ def test_admin_can_create_quest(tmp_path: Path) -> None:
     assert "Тестовый квест" in quests.text
 
 
+def test_admin_can_import_new_quest_from_csv(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    csv_content = (
+        "question_order,context,question_text,correct_answer,hint,answer_explanation\n"
+        '2,"Контекст 2","Вопрос 2","Ответ 2","Подсказка 2","Пояснение 2"\n'
+        '1,"Контекст 1","Вопрос 1","Ответ 1","Подсказка 1","Пояснение 1"\n'
+    )
+    response = client.post(
+        "/admin/quests/import",
+        data={"name": "Импортированный квест"},
+        files={"csv_file": ("quest.csv", csv_content.encode("utf-8"), "text/csv")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/admin/quests/")
+    assert "imported=2" in response.headers["location"]
+
+    imported_quest = next(
+        quest
+        for quest in database.get_all_quests()
+        if quest["name"] == "Импортированный квест"
+    )
+    assert imported_quest["status"] == "draft"
+
+    questions = database.get_questions_for_quest(imported_quest["id"])
+    assert [question["order_num"] for question in questions] == [1, 2]
+    assert questions[0]["task_text"] == "Вопрос 1"
+    assert questions[1]["correct_answer"] == "Ответ 2"
+
+    detail_page = client.get(response.headers["location"])
+    assert detail_page.status_code == 200
+    assert 'Квест &quot;Импортированный квест&quot; успешно создан. Импортировано 2 вопросов.' in detail_page.text
+
+
+def test_csv_import_rejects_invalid_headers(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    csv_content = (
+        "context,question_order,question_text,correct_answer,hint,answer_explanation\n"
+        '"Контекст","1","Вопрос","Ответ","Подсказка","Пояснение"\n'
+    )
+    response = client.post(
+        "/admin/quests/import",
+        data={"name": "Плохой импорт"},
+        files={"csv_file": ("quest.csv", csv_content.encode("utf-8"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert "Неверный порядок столбцов в CSV-файле" in response.text
+    assert all(quest["name"] != "Плохой импорт" for quest in database.get_all_quests())
+
+
+def test_csv_import_shows_row_errors_and_does_not_create_partial_quest(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    database = Database(str(tmp_path / "admin.sqlite3"))
+
+    client.post(
+        "/admin/login",
+        data={"username": "admin", "password": "strong-password"},
+    )
+
+    csv_content = (
+        "question_order,context,question_text,correct_answer,hint,answer_explanation\n"
+        '1,"Контекст","","Ответ","Подсказка","Пояснение"\n'
+        '1,"Контекст 2","Вопрос 2","Ответ 2","Подсказка 2","Пояснение 2"\n'
+        "\n"
+    )
+    response = client.post(
+        "/admin/quests/import",
+        data={"name": "  "},
+        files={"csv_file": ("quest.csv", csv_content.encode("utf-8"), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert "Не указано название квеста" in response.text
+    assert "Строка 2: не заполнено поле question_text" in response.text
+    assert "Строка 3: question_order повторяется" in response.text
+    assert "Строка 4: пустая строка не допускается" in response.text
+    assert all(quest["name"].strip() for quest in database.get_all_quests())
+
+
 def test_operator_cannot_manage_quests_or_staff(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     database = Database(str(tmp_path / "admin.sqlite3"))

@@ -6,6 +6,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from admin_panel.csv_import import ImportedQuestion
+
 
 class Database:
     def __init__(self, db_path: str) -> None:
@@ -351,6 +353,62 @@ class Database:
         )
         self.conn.commit()
         return cursor.lastrowid
+
+    def create_quest_from_csv_import(
+        self,
+        *,
+        name: str,
+        questions: list[ImportedQuestion],
+    ) -> int:
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO quests (
+                    name,
+                    description,
+                    status,
+                    start_point,
+                    prize_location,
+                    start_date,
+                    end_date,
+                    max_attempts,
+                    allow_retry_before_gift
+                )
+                VALUES (?, '', 'draft', '', '', NULL, NULL, 3, 0)
+                """,
+                (name,),
+            )
+            quest_id = cursor.lastrowid
+            self.conn.executemany(
+                """
+                INSERT INTO questions (
+                    quest_id,
+                    order_num,
+                    context,
+                    task_text,
+                    correct_answer,
+                    explanation,
+                    hint,
+                    semantic_mode,
+                    semantic_threshold,
+                    attempts_override
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'simple', 0.6, NULL)
+                """,
+                [
+                    (
+                        quest_id,
+                        question.order_num,
+                        question.context,
+                        question.task_text,
+                        question.correct_answer,
+                        question.explanation,
+                        question.hint,
+                    )
+                    for question in questions
+                ],
+            )
+        return int(quest_id)
 
     def update_quest(
         self,

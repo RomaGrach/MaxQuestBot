@@ -130,6 +130,7 @@ form{{background:#fff;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0
 .login-box{{max-width:360px;margin:80px auto;background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1)}}
 .login-box h1{{text-align:center;margin-bottom:24px}}
 .error{{background:#ffeaa7;padding:10px;border-radius:6px;margin-bottom:16px;color:#d63031}}
+.success{{background:#dff8eb;padding:10px;border-radius:6px;margin-bottom:16px;color:#0f7a47}}
 .back-link{{margin-bottom:16px;display:inline-block;color:#6c5ce7;text-decoration:none}}
 .empty{{padding:20px;text-align:center;color:#636e72;font-style:italic}}
 .inline-form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:transparent;padding:0;box-shadow:none;max-width:none}}
@@ -369,11 +370,13 @@ def quests_list(quests, user=None):
         )
 
     create_button = ""
+    import_button = ""
     if _is_admin(user):
         create_button = '<a href="/admin/quests/new" class="btn btn-primary">+ Создать квест</a>'
+        import_button = '<a href="/admin/quests/import" class="btn btn-secondary">📥 Импортировать квест из CSV</a>'
 
     body = f"""<h1>🗺️ Квесты</h1>
-{create_button}
+<div class="actions">{create_button}{import_button}</div>
 <div style="margin-top:16px">{_table(["ID", "Название", "Статус", "Начало", "Конец", "Попыток", "Повтор до подарка", "Действия"], rows, "Нет квестов")}</div>"""
     return layout("Квесты", body, user=user, active="quests")
 
@@ -407,7 +410,26 @@ def quest_form(quest=None, error="", user=None):
     return layout(title, body, user=user, active="quests")
 
 
-def quest_detail(quest, questions, attempts, user=None):
+def quest_import_form(*, name: str = "", errors: list[str] | None = None, user=None):
+    error_block = ""
+    if errors:
+        error_items = "".join(f"<li>{_escape(error)}</li>" for error in errors)
+        error_block = f"<div class='error'><ul>{error_items}</ul></div>"
+
+    expected_header = "question_order,context,question_text,correct_answer,hint,answer_explanation"
+    body = f"""<h1>📥 Импорт квеста из CSV</h1>
+<a href="/admin/quests" class="back-link">← Назад к списку</a>
+{error_block}
+<form method="POST" action="/admin/quests/import" enctype="multipart/form-data">
+<div class="form-group"><label>Название квеста</label><input name="name" value="{_escape(name)}" required></div>
+<div class="form-group"><label>CSV-файл</label><input type="file" name="csv_file" accept=".csv" required></div>
+<div class="muted">Ожидаемый заголовок CSV: <code>{_escape(expected_header)}</code></div>
+<button class="btn btn-primary">Загрузить</button>
+</form>"""
+    return layout("Импорт квеста", body, user=user, active="quests")
+
+
+def quest_detail(quest, questions, attempts, user=None, notice: str = ""):
     qid = quest["id"]
     status_map = {
         "draft": _badge("Черновик", "yellow"),
@@ -476,18 +498,19 @@ def quest_detail(quest, questions, attempts, user=None):
             "</tr>"
         )
 
+    notice_html = ""
+    if notice:
+        notice_html = f"<div class='success'>{_escape(notice)}</div>"
+
     question_tools = ""
     if _is_admin(user):
         question_tools = (
             f'<a href="/admin/quests/{qid}/questions/new" class="btn btn-primary btn-sm">+ Добавить вопрос</a>'
-            f'<form method="POST" action="/admin/quests/{qid}/questions/import" enctype="multipart/form-data" class="inline-form" style="margin-left:8px">'
-            '<input type="file" name="csv_file" accept=".csv">'
-            '<button class="btn btn-secondary btn-sm">📥 Импорт CSV</button>'
-            "</form>"
         )
 
     body = f"""<h1>🗺️ {_escape(quest['name'])}</h1>
 <a href="/admin/quests" class="back-link">← Назад к списку</a>
+{notice_html}
 <div class="card">
 <h3>Информация</h3>
 <p><strong>Статус:</strong> {status_map.get(quest['status'], _escape(quest['status']))}</p>

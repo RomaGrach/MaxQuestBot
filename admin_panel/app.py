@@ -10,6 +10,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from admin_panel.config import AdminPanelSettings
+from admin_panel.csv_import import parse_quest_csv_import
 from admin_panel.db import Database
 from admin_panel.security import (
     hash_password,
@@ -251,6 +252,13 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             return redirect
         return render_html(views.quest_form(user=admin), user=admin)
 
+    @app.get("/admin/quests/import", response_class=HTMLResponse)
+    async def admin_quest_import_form(request: Request):
+        admin, redirect = require_superadmin(request)
+        if redirect:
+            return redirect
+        return render_html(views.quest_import_form(user=admin), user=admin)
+
     @app.post("/admin/quests")
     async def admin_quest_create(
         request: Request,
@@ -280,8 +288,45 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
         _set_session_cookie(response, username=admin["username"])
         return response
 
+    @app.post("/admin/quests/import")
+    async def admin_quest_import(
+        request: Request,
+        name: str = Form(default=""),
+        csv_file: UploadFile | None = File(default=None),
+    ):
+        admin, redirect = require_superadmin(request)
+        if redirect:
+            return redirect
+
+        file_content = await csv_file.read() if csv_file is not None else None
+        parsed, errors = parse_quest_csv_import(
+            quest_name=name,
+            filename=csv_file.filename if csv_file is not None else None,
+            content=file_content,
+        )
+        if errors or parsed is None:
+            return render_html(
+                views.quest_import_form(name=name, errors=errors, user=admin),
+                user=admin,
+            )
+
+        quest_id = get_db().create_quest_from_csv_import(
+            name=parsed.quest_name,
+            questions=parsed.questions,
+        )
+        response = RedirectResponse(
+            url=f"/admin/quests/{quest_id}?imported={len(parsed.questions)}",
+            status_code=303,
+        )
+        _set_session_cookie(response, username=admin["username"])
+        return response
+
     @app.get("/admin/quests/{quest_id}", response_class=HTMLResponse)
-    async def admin_quest_detail(quest_id: int, request: Request):
+    async def admin_quest_detail(
+        quest_id: int,
+        request: Request,
+        imported: int | None = None,
+    ):
         admin, redirect = require_admin(request)
         if redirect:
             return redirect
@@ -290,8 +335,11 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             return PlainTextResponse("Quest not found", status_code=404)
         questions = get_db().get_questions_for_quest(quest_id)
         attempts = get_db().get_attempts_for_quest(quest_id)
+        notice = ""
+        if imported is not None:
+            notice = f'Квест "{quest["name"]}" успешно создан. Импортировано {imported} вопросов.'
         return render_html(
-            views.quest_detail(quest, questions, attempts, user=admin),
+            views.quest_detail(quest, questions, attempts, user=admin, notice=notice),
             user=admin,
         )
 
@@ -408,43 +456,6 @@ def create_app(settings: AdminPanelSettings | None = None) -> FastAPI:
             semantic_threshold,
             int(attempts_override) if attempts_override.strip() else None,
         )
-        response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
-        _set_session_cookie(response, username=admin["username"])
-        return response
-
-    @app.post("/admin/quests/{quest_id}/questions/import")
-    async def admin_questions_import(
-        quest_id: int,
-        request: Request,
-        csv_file: UploadFile = File(...),
-    ):
-        admin, redirect = require_superadmin(request)
-        if redirect:
-            return redirect
-        if get_db().get_quest_by_id(quest_id) is None:
-            return PlainTextResponse("Quest not found", status_code=404)
-        content = (await csv_file.read()).decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(content))
-        existing = get_db().get_questions_for_quest(quest_id)
-        next_order = max((question["order_num"] for question in existing), default=0) + 1
-        for row in reader:
-            get_db().create_question(
-                quest_id=quest_id,
-                order_num=int(row.get("order_num", next_order)),
-                context=row.get("context", ""),
-                task_text=row.get("task_text", ""),
-                correct_answer=row.get("correct_answer", ""),
-                explanation=row.get("explanation", ""),
-                hint=row.get("hint", ""),
-                semantic_mode=(row.get("semantic_mode", "simple") or "simple").strip().lower(),
-                semantic_threshold=float(row.get("semantic_threshold", 0.6) or 0.6),
-                attempts_override=(
-                    int(row["attempts_override"])
-                    if row.get("attempts_override", "").strip()
-                    else None
-                ),
-            )
-            next_order += 1
         response = RedirectResponse(url=f"/admin/quests/{quest_id}", status_code=303)
         _set_session_cookie(response, username=admin["username"])
         return response
